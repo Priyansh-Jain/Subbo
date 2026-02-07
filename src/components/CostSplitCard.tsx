@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Users, Copy, Check, Plus, X } from 'lucide-react';
-import { useTamboStreamStatus } from '@tambo-ai/react';
+import { useSafeStreamStatus } from '@/lib/tamboSafeHooks';
 
 interface Member {
  name: string;
@@ -51,8 +51,7 @@ export function CostSplitCard({
  splitType: initialSplitType,
  currency = '$',
 }: CostSplitCardProps) {
- // eslint-disable-next-line @typescript-eslint/no-explicit-any
- const { streamStatus } = useTamboStreamStatus<Record<string, any>>();
+ const { streamStatus } = useSafeStreamStatus();
  const [localMembers, setLocalMembers] = useState<Member[] | null>(null);
  const [splitType, setSplitType] = useState<'equal' | 'custom'>(initialSplitType || 'equal');
  const [newMemberName, setNewMemberName] = useState('');
@@ -108,9 +107,12 @@ export function CostSplitCard({
  const handleCopyLink = useCallback(() => {
  const names = displayMembers.map(m => `${m.name}: ${currency}${m.share.toFixed(2)}`).join('\n');
  const text = `Split for ${subscriptionName ?? 'Subscription'} (${currency}${cost.toFixed(2)}/mo):\n${names}`;
- navigator.clipboard.writeText(text);
+ navigator.clipboard.writeText(text).then(() => {
  setCopied(true);
  copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+ }).catch(() => {
+ // Clipboard API not available or permission denied — silently ignore
+ });
  }, [displayMembers, subscriptionName, cost, currency]);
 
  if (streamStatus.isPending || !initialMembers) {

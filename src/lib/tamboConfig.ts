@@ -13,14 +13,9 @@ import { SavingsSimulator } from '@/components/SavingsSimulator';
 import { CancellationStagingCard } from '@/components/CancellationStagingCard';
 import { SubscriptionHealthScore } from '@/components/SubscriptionHealthScore';
 import { CostSplitCard } from '@/components/CostSplitCard';
-import {
-    mockSubscriptions,
-    cancellationPaths,
-    calculateTotalSpending,
-    calculatePotentialSavings,
-    getZombieSubscriptions,
-    getTrialEndingSubscriptions,
-} from '@/lib/mockData';
+import { cancellationPaths } from '@/lib/mockData';
+import { getSubscriptions as getStoreSubscriptions } from '@/lib/subscriptionStore';
+import { knownServices, CATEGORY_COLORS } from '@/lib/knownServices';
 
 // ---------------------------------------------------------------------------
 // Schemas — all component props are OPTIONAL for streaming support.
@@ -245,7 +240,8 @@ const costSplitCardSchema = z.object({
 // ---------------------------------------------------------------------------
 
 function getSubscriptionData() {
-    const subs = mockSubscriptions.map(s => ({
+    const allSubs = getStoreSubscriptions();
+    const subs = allSubs.map(s => ({
         id: s.id,
         name: s.name,
         cost: s.cost,
@@ -254,12 +250,16 @@ function getSubscriptionData() {
         category: s.category,
         trialEndsIn: s.trialEndsIn,
     }));
+    const totalMonthlySpending = allSubs.reduce((sum, s) => sum + s.cost, 0);
+    const zombies = allSubs.filter(s => s.status === 'zombie');
+    const potentialSavings = zombies.reduce((sum, s) => sum + s.cost, 0);
+    const trialsEndingCount = allSubs.filter(s => s.status === 'trial_ending').length;
     return {
         subscriptions: subs,
-        totalMonthlySpending: calculateTotalSpending(),
-        potentialSavings: calculatePotentialSavings(),
-        zombieCount: getZombieSubscriptions().length,
-        trialsEndingCount: getTrialEndingSubscriptions().length,
+        totalMonthlySpending,
+        potentialSavings,
+        zombieCount: zombies.length,
+        trialsEndingCount,
     };
 }
 
@@ -391,7 +391,8 @@ const getZombieSubscriptionsTool = defineTool({
         totalWasted: z.number(),
     }),
     tool: async () => {
-        const zombies = getZombieSubscriptions().map(s => ({
+        const allSubs = getStoreSubscriptions();
+        const zombies = allSubs.filter(s => s.status === 'zombie').map(s => ({
             id: s.id,
             name: s.name,
             cost: s.cost,
@@ -400,9 +401,10 @@ const getZombieSubscriptionsTool = defineTool({
             category: s.category,
             trialEndsIn: s.trialEndsIn,
         }));
+        const totalWasted = zombies.reduce((sum, z) => sum + z.cost, 0);
         return {
             zombies,
-            totalWasted: calculatePotentialSavings(),
+            totalWasted,
         };
     },
 });
@@ -419,7 +421,7 @@ const generateBurnerCardTool = defineTool({
         const cardLast4 = Math.floor(1000 + Math.random() * 9000).toString();
         return {
             serviceName,
-            expiresInDays: daysUntilExpiry || 7,
+            expiresInDays: daysUntilExpiry ?? 7,
             cardLast4,
         };
     },
@@ -431,7 +433,7 @@ const getAlertsTool = defineTool({
     inputSchema: z.object({}),
     outputSchema: alertCardSchema,
     tool: async () => {
-        const subs = mockSubscriptions;
+        const subs = getStoreSubscriptions();
         const alerts: Array<{
             id: string;
             severity: 'critical' | 'warning' | 'info';
@@ -518,7 +520,7 @@ const getRenewalCalendarTool = defineTool({
 
         const daysMap: Record<string, { subscriptions: Array<{ name: string; cost: number; status: string; logo: string }>; totalCost: number }> = {};
 
-        for (const sub of mockSubscriptions) {
+        for (const sub of getStoreSubscriptions()) {
             if (!sub.renewalDate) continue;
             const renewal = new Date(sub.renewalDate);
             if (renewal.getMonth() === targetMonth && renewal.getFullYear() === targetYear) {
@@ -542,7 +544,7 @@ const getRenewalCalendarTool = defineTool({
             totalCost: Math.round(data.totalCost * 100) / 100,
         }));
 
-        const monthlyTotal = mockSubscriptions.reduce((sum, s) => sum + s.cost, 0);
+        const monthlyTotal = getStoreSubscriptions().reduce((sum, s) => sum + s.cost, 0);
 
         return {
             month: targetMonth,
@@ -554,18 +556,7 @@ const getRenewalCalendarTool = defineTool({
     },
 });
 
-const CATEGORY_COLORS: Record<string, string> = {
-    Entertainment: '#3b82f6',
-    Music: '#22c55e',
-    Productivity: '#a855f7',
-    'AI Tools': '#10b981',
-    Software: '#6366f1',
-    Fitness: '#f97316',
-    Professional: '#0ea5e9',
-    Design: '#ec4899',
-    Cloud: '#06b6d4',
-    Health: '#14b8a6',
-};
+// CATEGORY_COLORS imported from @/lib/knownServices (single source of truth)
 
 const getSpendingAnalyticsTool = defineTool({
     name: 'getSpendingAnalytics',
@@ -573,7 +564,7 @@ const getSpendingAnalyticsTool = defineTool({
     inputSchema: z.object({}),
     outputSchema: spendingAnalyticsSchema,
     tool: async () => {
-        const subs = mockSubscriptions;
+        const subs = getStoreSubscriptions();
         const totalMonthly = subs.reduce((sum, s) => sum + s.cost, 0);
 
         // Category breakdown
@@ -595,7 +586,7 @@ const getSpendingAnalyticsTool = defineTool({
         const now = new Date();
         const monthlyTrends = Array.from({ length: 6 }, (_, i) => {
             const monthIndex = (now.getMonth() - 5 + i + 12) % 12;
-            const variance = (Math.random() - 0.5) * 40;
+            const variance = Math.sin(i * 1.5) * 20;
             return {
                 month: monthNames[monthIndex],
                 amount: Math.round((totalMonthly + variance) * 100) / 100,
@@ -638,66 +629,27 @@ const executeCancellationTool = defineTool({
         message: z.string(),
     }),
     tool: ({ subscriptionId, serviceName }) => {
-        const sub = mockSubscriptions.find(
+        const sub = getStoreSubscriptions().find(
             s => s.id === subscriptionId || s.name.toLowerCase() === serviceName.toLowerCase()
         );
+        if (!sub) {
+            return {
+                success: false,
+                serviceName,
+                monthlySavings: 0,
+                message: `Could not find a subscription matching "${serviceName}" in your active subscriptions.`,
+            };
+        }
         return {
             success: true,
-            serviceName: sub?.name ?? serviceName,
-            monthlySavings: sub?.cost ?? 0,
-            message: `${sub?.name ?? serviceName} has been cancelled successfully.`,
+            serviceName: sub.name,
+            monthlySavings: sub.cost,
+            message: `${sub.name} has been cancelled successfully.`,
         };
     },
 });
 
-// Known services database for subscription lookup
-const knownServicesDB: Record<string, { cost: number; category: string; logo: string }> = {
-    'netflix': { cost: 15.99, category: 'Entertainment', logo: '🎬' },
-    'spotify': { cost: 10.99, category: 'Music', logo: '🎵' },
-    'adobe': { cost: 59.99, category: 'Productivity', logo: '🎨' },
-    'adobe creative cloud': { cost: 59.99, category: 'Productivity', logo: '🎨' },
-    'chatgpt': { cost: 20.00, category: 'AI Tools', logo: '🤖' },
-    'openai': { cost: 20.00, category: 'AI Tools', logo: '🤖' },
-    'claude': { cost: 20.00, category: 'AI Tools', logo: '🤖' },
-    'cursor': { cost: 20.00, category: 'Developer', logo: '💻' },
-    'perplexity': { cost: 20.00, category: 'AI Tools', logo: '🔍' },
-    'disney+': { cost: 13.99, category: 'Entertainment', logo: '🏰' },
-    'disney': { cost: 13.99, category: 'Entertainment', logo: '🏰' },
-    'hbo max': { cost: 15.99, category: 'Entertainment', logo: '📺' },
-    'youtube premium': { cost: 13.99, category: 'Entertainment', logo: '▶️' },
-    'youtube': { cost: 13.99, category: 'Entertainment', logo: '▶️' },
-    'amazon prime': { cost: 14.99, category: 'Shopping', logo: '📦' },
-    'hulu': { cost: 17.99, category: 'Entertainment', logo: '📺' },
-    'apple music': { cost: 10.99, category: 'Music', logo: '🍎' },
-    'apple tv': { cost: 9.99, category: 'Entertainment', logo: '🍎' },
-    'icloud': { cost: 2.99, category: 'Storage', logo: '☁️' },
-    'dropbox': { cost: 11.99, category: 'Storage', logo: '📁' },
-    'google one': { cost: 2.99, category: 'Storage', logo: '☁️' },
-    'notion': { cost: 10.00, category: 'Productivity', logo: '📝' },
-    'figma': { cost: 15.00, category: 'Design', logo: '✏️' },
-    'canva': { cost: 12.99, category: 'Design', logo: '🖼️' },
-    'grammarly': { cost: 12.00, category: 'Productivity', logo: '📖' },
-    'linkedin premium': { cost: 29.99, category: 'Professional', logo: '💼' },
-    'headspace': { cost: 12.99, category: 'Health', logo: '🧘' },
-    'calm': { cost: 14.99, category: 'Health', logo: '🌊' },
-    'github': { cost: 4.00, category: 'Developer', logo: '💻' },
-    'github copilot': { cost: 10.00, category: 'Developer', logo: '💻' },
-    'aws': { cost: 45.00, category: 'Cloud', logo: '☁️' },
-    'planet fitness': { cost: 24.99, category: 'Fitness', logo: '🏋️' },
-    'twitch': { cost: 9.99, category: 'Entertainment', logo: '🎮' },
-    'slack': { cost: 8.75, category: 'Productivity', logo: '💬' },
-    'zoom': { cost: 13.33, category: 'Productivity', logo: '📹' },
-    'microsoft 365': { cost: 9.99, category: 'Productivity', logo: '📊' },
-    'duolingo': { cost: 6.99, category: 'Education', logo: '🦉' },
-    'crunchyroll': { cost: 7.99, category: 'Entertainment', logo: '🎌' },
-    'paramount+': { cost: 11.99, category: 'Entertainment', logo: '📺' },
-    'nordvpn': { cost: 12.99, category: 'Security', logo: '🔒' },
-    '1password': { cost: 2.99, category: 'Security', logo: '🔑' },
-    'vercel': { cost: 20.00, category: 'Developer', logo: '▲' },
-    'supabase': { cost: 25.00, category: 'Developer', logo: '💻' },
-    'linear': { cost: 8.00, category: 'Productivity', logo: '📋' },
-    'midjourney': { cost: 10.00, category: 'AI Tools', logo: '🎨' },
-};
+// knownServices imported from @/lib/knownServices (single source of truth)
 
 const lookupSubscriptionInfoTool = defineTool({
     name: 'lookupSubscriptionInfo',
@@ -718,16 +670,16 @@ const lookupSubscriptionInfoTool = defineTool({
         const results = serviceNames.map(name => {
             const lower = name.toLowerCase().trim();
             // Exact match
-            if (knownServicesDB[lower]) {
-                const info = knownServicesDB[lower];
+            if (knownServices[lower]) {
+                const info = knownServices[lower];
                 return { name, cost: info.cost, category: info.category, logo: info.logo, found: true };
             }
             // Partial match
-            const key = Object.keys(knownServicesDB).find(
+            const key = Object.keys(knownServices).find(
                 k => k.includes(lower) || lower.includes(k)
             );
             if (key) {
-                const info = knownServicesDB[key];
+                const info = knownServices[key];
                 return { name, cost: info.cost, category: info.category, logo: info.logo, found: true };
             }
             // Unknown service — return defaults
@@ -743,7 +695,7 @@ const analyzeSubscriptionHealthTool = defineTool({
     inputSchema: z.object({}),
     outputSchema: subscriptionHealthScoreSchema,
     tool: async () => {
-        const subs = mockSubscriptions;
+        const subs = getStoreSubscriptions();
         const total = subs.length;
         if (total === 0) {
             return {
@@ -839,7 +791,7 @@ const calculateCostSplitTool = defineTool({
     }),
     outputSchema: costSplitCardSchema,
     tool: ({ subscriptionName, totalCost, memberNames, splitType }) => {
-        const count = memberNames.length;
+        const count = memberNames.length || 1;
         const share = Math.round((totalCost / count) * 100) / 100;
         const pct = Math.round(100 / count);
         return {
@@ -850,7 +802,7 @@ const calculateCostSplitTool = defineTool({
                 name,
                 share,
                 percentage: pct,
-                isPaid: Math.random() > 0.5,
+                isPaid: false,
             })),
             currency: '$',
         };

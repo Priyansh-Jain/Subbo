@@ -2,17 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { useTamboStreamStatus } from '@tambo-ai/react';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function useSafeStreamStatus<T extends Record<string, any>>() {
- try {
- // eslint-disable-next-line react-hooks/rules-of-hooks
- return useTamboStreamStatus<T>();
- } catch {
- return { streamStatus: { isPending: false } };
- }
-}
+import { useSafeStreamStatus } from '@/lib/tamboSafeHooks';
 
 interface CategorySpend {
  category: string;

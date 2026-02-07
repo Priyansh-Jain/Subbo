@@ -3,7 +3,8 @@
 import React, { useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, AlertCircle, Info } from 'lucide-react';
-import { useTamboStreamStatus, useTamboThreadInput } from '@tambo-ai/react';
+import { useTamboStreamStatus } from '@tambo-ai/react';
+import { useSafeThreadInput } from '@/lib/tamboSafeHooks';
 
 interface Alert {
   id: string;
@@ -19,16 +20,6 @@ interface AlertCardProps {
   alerts?: Alert[];
   title?: string;
   onAction?: (alert: Alert) => void;
-}
-
-/** Safely access useTamboThreadInput — returns null when outside Tambo context */
-function useSafeThreadInput() {
-  try {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    return useTamboThreadInput();
-  } catch {
-    return null;
-  }
 }
 
 const severityConfig = {

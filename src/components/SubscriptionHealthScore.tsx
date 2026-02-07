@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Skull, DollarSign, Clock, LayoutGrid, XCircle, ArrowDown, Eye, CheckCircle } from 'lucide-react';
-import { useTamboStreamStatus } from '@tambo-ai/react';
+import { useSafeStreamStatus } from '@/lib/tamboSafeHooks';
 
 interface Recommendation {
  type?: 'cancel' | 'downgrade' | 'watch' | 'good';
@@ -66,7 +66,7 @@ function HealthSkeleton() {
 function CircularGauge({ score, grade }: { score: number; grade: string }) {
  const radius = 54;
  const circumference = 2 * Math.PI * radius;
- const progress = (score / 100) * circumference;
+ const progress = (Math.max(0, Math.min(100, score)) / 100) * circumference;
  const colors = GRADE_COLORS[grade] || GRADE_COLORS.C;
 
  return (
@@ -112,8 +112,7 @@ export function SubscriptionHealthScore({
  totalMonthly,
  subscriptionCount,
 }: SubscriptionHealthScoreProps) {
- // eslint-disable-next-line @typescript-eslint/no-explicit-any
- const { streamStatus } = useTamboStreamStatus<Record<string, any>>();
+ const { streamStatus } = useSafeStreamStatus();
 
  const metricCards = useMemo(() => {
  if (!metrics) return [];

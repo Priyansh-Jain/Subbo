@@ -81,21 +81,13 @@ export function CancellationStagingCard({
  setConfirming(true);
  setCurrentStatus('pending_api');
 
+ // Only update visual state to "cancelled". The actual subscription removal
+ // is handled by the center panel's CancellationApprovalView.onConfirm.
  timerRef.current = setTimeout(() => {
- if (actions) {
- const byId = subscriptionId && allSubscriptions.find(s => s.id === subscriptionId);
- const match = byId || (serviceName && allSubscriptions.find(
- s => s.name.toLowerCase() === serviceName.toLowerCase()
- ));
- if (match) {
- actions.removeSubscription(match.id);
- actions.clearPendingCancellation();
- }
- }
  setCurrentStatus('cancelled');
  setConfirming(false);
  }, 1500);
- }, [confirming, actions, subscriptionId, serviceName, allSubscriptions, setCurrentStatus]);
+ }, [confirming, setCurrentStatus]);
 
  if (streamStatus.isPending || (!serviceName && !subscriptionId)) {
  return <CancellationSkeleton />;

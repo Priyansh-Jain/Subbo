@@ -165,7 +165,7 @@ export function SubscriptionGraph({
       ctx.fillStyle = '#374151';
       ctx.fillText('YOU', x, y + 35);
     } else {
-      const baseRadius = 15 + (node.cost || 10) / 5;
+      const baseRadius = Math.min(40, 15 + (node.cost || 10) / 5);
       const color = statusColors[node.status || 'active'];
 
       let radius = baseRadius;
@@ -212,7 +212,7 @@ export function SubscriptionGraph({
     const source = link.source as GraphNode;
     const target = link.target as GraphNode;
 
-    if (!source.x || !source.y || !target.x || !target.y) return;
+    if (source.x == null || source.y == null || target.x == null || target.y == null) return;
 
     const lineWidth = Math.max(1, (link as GraphLink).value / 15);
     const targetStatus = (target as GraphNode).status || 'active';

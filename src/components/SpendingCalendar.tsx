@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
@@ -15,17 +15,7 @@ import {
  addMonths,
  subMonths,
 } from 'date-fns';
-import { useTamboStreamStatus } from '@tambo-ai/react';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function useSafeStreamStatus<T extends Record<string, any>>() {
- try {
- // eslint-disable-next-line react-hooks/rules-of-hooks
- return useTamboStreamStatus<T>();
- } catch {
- return { streamStatus: { isPending: false } };
- }
-}
+import { useSafeStreamStatus } from '@/lib/tamboSafeHooks';
 
 interface CalendarSubscription {
  name: string;
@@ -89,6 +79,14 @@ export function SpendingCalendar({
  return new Date(y, m, 1);
  });
  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+ useEffect(() => {
+  if (month != null || year != null) {
+   const m = month ?? new Date().getMonth();
+   const y = year ?? new Date().getFullYear();
+   setCurrentMonth(new Date(y, m, 1));
+  }
+ }, [month, year]);
 
  const daysMap = useMemo(() => {
  const map: Record<string, CalendarDay> = {};

@@ -30,6 +30,8 @@ import { SpendingAnalytics } from '@/components/SpendingAnalytics';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SubscriptionActionsProvider } from '@/contexts/SubscriptionContext';
 import type { Subscription } from '@/lib/types';
+import { setSubscriptions as syncSubscriptionsToStore } from '@/lib/subscriptionStore';
+import { CATEGORY_DOT_COLORS, CATEGORY_COLORS as ANALYTICS_CATEGORY_COLORS } from '@/lib/knownServices';
 
 type FilterType = 'all' | 'active' | 'zombie' | 'renewal' | 'trialing';
 
@@ -41,23 +43,7 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]['id'];
 
-const CATEGORY_DOT_COLORS: Record<string, string> = {
- Entertainment: 'bg-blue-400',
- Music: 'bg-green-400',
- Productivity: 'bg-purple-400',
- 'AI Tools': 'bg-emerald-400',
- Software: 'bg-indigo-400',
- Fitness: 'bg-orange-400',
- Professional: 'bg-sky-400',
- Design: 'bg-pink-400',
- Cloud: 'bg-cyan-400',
- Storage: 'bg-slate-400',
- Health: 'bg-teal-400',
- Developer: 'bg-violet-400',
- Security: 'bg-amber-400',
- Education: 'bg-lime-400',
- Shopping: 'bg-rose-400',
-};
+// CATEGORY_DOT_COLORS imported from @/lib/knownServices (single source of truth)
 
 type MobilePanel = 'sidebar' | 'main' | 'chat';
 
@@ -85,6 +71,11 @@ export default function Home() {
  } catch (e) {
  console.warn('Failed to save subscriptions to localStorage:', e);
  }
+ }, [subscriptions]);
+
+ // Sync subscriptions to the module-level store so Tambo tools can read real data
+ useEffect(() => {
+ syncSubscriptionsToStore(subscriptions);
  }, [subscriptions]);
 
  const handleDetectedSubscriptions = (subs: Subscription[]) => {
@@ -391,23 +382,7 @@ export default function Home() {
 
 /* ─── Tab Views ─────────────────────────────────────────────────── */
 
-const ANALYTICS_CATEGORY_COLORS: Record<string, string> = {
- Entertainment: '#3b82f6',
- Music: '#22c55e',
- Productivity: '#a855f7',
- 'AI Tools': '#10b981',
- Software: '#6366f1',
- Fitness: '#f97316',
- Professional: '#0ea5e9',
- Design: '#ec4899',
- Cloud: '#06b6d4',
- Health: '#14b8a6',
- Storage: '#94a3b8',
- Developer: '#8b5cf6',
- Security: '#f59e0b',
- Education: '#84cc16',
- Shopping: '#f43f5e',
-};
+// ANALYTICS_CATEGORY_COLORS imported from @/lib/knownServices as CATEGORY_COLORS (single source of truth)
 
 function ScheduleTabView({ subscriptions }: { subscriptions: Subscription[] }) {
  const calendarData = useMemo(() => {
