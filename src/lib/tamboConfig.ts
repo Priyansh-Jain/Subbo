@@ -5,6 +5,14 @@ import { SubscriptionGraph } from '@/components/SubscriptionGraph';
 import { CancellationRoadmap } from '@/components/CancellationRoadmap';
 import { VirtualBurnerCard } from '@/components/VirtualBurnerCard';
 import { MetricCards } from '@/components/MetricCards';
+import { SubscriptionDraftList } from '@/components/SubscriptionDraftList';
+import { AlertCard } from '@/components/AlertCard';
+import { SpendingCalendar } from '@/components/SpendingCalendar';
+import { SpendingAnalytics } from '@/components/SpendingAnalytics';
+import { SavingsSimulator } from '@/components/SavingsSimulator';
+import { CancellationStagingCard } from '@/components/CancellationStagingCard';
+import { SubscriptionHealthScore } from '@/components/SubscriptionHealthScore';
+import { CostSplitCard } from '@/components/CostSplitCard';
 import {
     mockSubscriptions,
     cancellationPaths,
@@ -63,6 +71,174 @@ const burnerCardSchema = z.object({
     cardLast4: z.string().optional().describe('Last 4 digits of the virtual card, e.g., "4829"'),
 }).describe('Virtual burner credit card for safe free trial signups');
 
+const subscriptionDraftSchema = z.object({
+    name: z.string().optional().describe('Name of the service, e.g., "Netflix"'),
+    cost: z.number().optional().describe('Cost in USD, e.g., 15.99'),
+    billingCycle: z.enum(['monthly', 'annual', 'weekly']).optional().describe('Billing frequency'),
+    category: z.string().optional().describe('Category like "Entertainment", "Software"'),
+    logo: z.string().optional().describe('Emoji representing the service'),
+    confidenceScore: z.number().min(0).max(1).optional().describe('AI confidence in extraction accuracy, 0-1'),
+}).describe('A single subscription draft extracted from user input');
+
+const subscriptionDraftListSchema = z.object({
+    drafts: z.array(subscriptionDraftSchema).optional().describe('Array of detected subscription drafts'),
+    sourceText: z.string().optional().describe('Original user text the subscriptions were extracted from'),
+}).describe('Editable list of subscription drafts for user review');
+
+// ---------------------------------------------------------------------------
+// Alert schemas
+// ---------------------------------------------------------------------------
+
+const alertSchema = z.object({
+    id: z.string().describe('Unique alert identifier'),
+    severity: z.enum(['critical', 'warning', 'info']).describe('Alert severity level'),
+    title: z.string().describe('Short alert title'),
+    description: z.string().describe('Detailed alert description'),
+    subscriptionName: z.string().describe('Name of the related subscription'),
+    actionLabel: z.string().describe('Label for the action button'),
+    actionType: z.string().describe('Type of action: cancel, review, extend, etc.'),
+}).describe('A single smart alert');
+
+const alertCardSchema = z.object({
+    alerts: z.array(alertSchema).optional().describe('Array of alerts sorted by severity'),
+    title: z.string().optional().describe('Optional heading for the alert list'),
+}).describe('Smart alerts for subscription issues');
+
+// ---------------------------------------------------------------------------
+// Calendar schemas
+// ---------------------------------------------------------------------------
+
+const calendarSubscriptionSchema = z.object({
+    name: z.string().describe('Subscription name'),
+    cost: z.number().describe('Cost in USD'),
+    status: z.string().describe('Subscription status'),
+    logo: z.string().describe('Emoji logo'),
+}).describe('Subscription entry for a calendar day');
+
+const calendarDaySchema = z.object({
+    date: z.string().describe('ISO date string'),
+    subscriptions: z.array(calendarSubscriptionSchema).optional().describe('Subscriptions renewing this day'),
+    totalCost: z.number().optional().describe('Total cost for this day'),
+}).describe('A single calendar day');
+
+const spendingCalendarSchema = z.object({
+    month: z.number().optional().describe('Month number (0-11)'),
+    year: z.number().optional().describe('Year number'),
+    days: z.array(calendarDaySchema).optional().describe('Calendar days with renewal data'),
+    monthlyTotal: z.number().optional().describe('Total spending this month'),
+    comparedToLastMonth: z.number().optional().describe('Percentage change from last month'),
+}).describe('Monthly spending calendar with renewal markers');
+
+// ---------------------------------------------------------------------------
+// Analytics schemas
+// ---------------------------------------------------------------------------
+
+const categorySpendSchema = z.object({
+    category: z.string().describe('Category name'),
+    amount: z.number().describe('Monthly spend in USD'),
+    color: z.string().describe('Hex color for chart segment'),
+    percentage: z.number().describe('Percentage of total spending'),
+}).describe('Spending breakdown by category');
+
+const monthlyTrendSchema = z.object({
+    month: z.string().describe('Month label, e.g. "Jan"'),
+    amount: z.number().describe('Total spending that month'),
+}).describe('Monthly spending data point');
+
+const topSubscriptionSchema = z.object({
+    name: z.string().describe('Subscription name'),
+    cost: z.number().describe('Monthly cost in USD'),
+    logo: z.string().describe('Emoji logo'),
+    percentage: z.number().describe('Percentage of total spending'),
+}).describe('Top subscription by cost');
+
+const spendingAnalyticsSchema = z.object({
+    categories: z.array(categorySpendSchema).optional().describe('Spending by category'),
+    monthlyTrends: z.array(monthlyTrendSchema).optional().describe('6-month spending trend'),
+    topSubscriptions: z.array(topSubscriptionSchema).optional().describe('Top 3 subscriptions by cost'),
+    totalMonthly: z.number().optional().describe('Total monthly spending'),
+    monthOverMonthChange: z.number().optional().describe('Month-over-month change percentage'),
+}).describe('Comprehensive spending analytics with charts');
+
+// ---------------------------------------------------------------------------
+// Savings Simulator schemas
+// ---------------------------------------------------------------------------
+
+const simSubscriptionSchema = z.object({
+    id: z.string().describe('Subscription ID'),
+    name: z.string().describe('Subscription name'),
+    cost: z.number().describe('Monthly cost in USD'),
+    logo: z.string().describe('Emoji logo'),
+    category: z.string().describe('Category'),
+    recommended: z.boolean().describe('Whether AI recommends canceling this'),
+}).describe('Subscription for savings simulation');
+
+const savingsSimulatorSchema = z.object({
+    subscriptions: z.array(simSubscriptionSchema).optional().describe('Subscriptions to simulate'),
+    currentMonthlyTotal: z.number().optional().describe('Current total monthly spending'),
+}).describe('Interactive savings simulator with toggle switches');
+
+// ---------------------------------------------------------------------------
+// Cancellation Staging Card schema
+// ---------------------------------------------------------------------------
+
+const cancellationStagingCardSchema = z.object({
+    subscriptionId: z.string().optional().describe('ID of subscription to cancel'),
+    serviceName: z.string().optional().describe('Name of the service to be cancelled'),
+    currentCost: z.number().optional().describe('Current monthly cost of the service'),
+    reason: z.string().optional().describe("User's reason for cancelling, editable via chat"),
+    status: z.enum(['draft', 'pending_api', 'cancelled']).optional()
+        .describe("Current state of the request. ALWAYS start as 'draft'."),
+    warningMessage: z.string().optional()
+        .describe("AI-generated warning, e.g., 'This has a $50 early termination fee'"),
+}).describe('Staged cancellation card with draft/confirm/cancelled workflow');
+
+// ---------------------------------------------------------------------------
+// Subscription Health Score schemas
+// ---------------------------------------------------------------------------
+
+const healthRecommendationSchema = z.object({
+    type: z.enum(['cancel', 'downgrade', 'watch', 'good']).optional().describe('Recommendation type'),
+    message: z.string().optional().describe('Recommendation message'),
+    subscriptionName: z.string().optional().describe('Related subscription name'),
+    potentialSavings: z.number().optional().describe('Monthly savings if acted on'),
+}).describe('A single health recommendation');
+
+const healthMetricsSchema = z.object({
+    zombieRatio: z.number().optional().describe('Percentage of subscriptions that are zombies (0-100)'),
+    costEfficiency: z.number().optional().describe('Cost efficiency score (0-100)'),
+    trialRisk: z.number().optional().describe('Number of trials at risk of auto-converting'),
+    categoryDiversity: z.number().optional().describe('Category diversity score (0-100)'),
+}).describe('Health score metric breakdown');
+
+const subscriptionHealthScoreSchema = z.object({
+    overallScore: z.number().optional().describe('Overall health score 0-100'),
+    grade: z.enum(['A', 'B', 'C', 'D', 'F']).optional().describe('Letter grade A-F'),
+    metrics: healthMetricsSchema.optional().describe('Detailed metric breakdown'),
+    recommendations: z.array(healthRecommendationSchema).optional().describe('AI recommendations for improvement'),
+    totalMonthly: z.number().optional().describe('Total monthly spending'),
+    subscriptionCount: z.number().optional().describe('Number of subscriptions'),
+}).describe('Subscription health score with gauge, metrics, and recommendations');
+
+// ---------------------------------------------------------------------------
+// Cost Split schemas
+// ---------------------------------------------------------------------------
+
+const costSplitMemberSchema = z.object({
+    name: z.string().describe('Member name'),
+    share: z.number().describe('Dollar amount this member pays'),
+    percentage: z.number().describe('Percentage of total'),
+    isPaid: z.boolean().optional().describe('Whether this member has paid'),
+}).describe('A member in a cost split');
+
+const costSplitCardSchema = z.object({
+    subscriptionName: z.string().optional().describe('Name of the subscription being split'),
+    totalCost: z.number().optional().describe('Total monthly cost to split'),
+    members: z.array(costSplitMemberSchema).optional().describe('Members sharing the cost'),
+    splitType: z.enum(['equal', 'custom']).optional().describe('Split method'),
+    currency: z.string().optional().describe('Currency symbol, default $'),
+}).describe('Cost splitting card for shared subscriptions');
+
 // ---------------------------------------------------------------------------
 // Helper — read mock data directly (avoids pointless browser→server round-trip
 // when the API just returns the same mock data).
@@ -115,6 +291,54 @@ export const tamboComponents: TamboComponent[] = [
         component: VirtualBurnerCard,
         description: 'Virtual credit card for free trials that auto-expires to prevent charges. Shows card visual with countdown timer. Use when user wants to safely sign up for a free trial or create a trial shield.',
         propsSchema: burnerCardSchema,
+    },
+    {
+        name: 'SubscriptionDraftList',
+        component: SubscriptionDraftList,
+        description: 'Editable list of detected subscription drafts. Use this when the user mentions subscriptions they have, lists services, or pastes billing info. The AI can refine drafts via follow-up conversation. User clicks "Add to Dashboard" to confirm.',
+        propsSchema: subscriptionDraftListSchema,
+    },
+    {
+        name: 'AlertCard',
+        component: AlertCard,
+        description: 'Smart alerts showing critical subscription issues: price hikes, expiring trials, zombie subscriptions, and upcoming renewals. Use when the user asks about alerts, issues, problems, or wants a health check.',
+        propsSchema: alertCardSchema,
+    },
+    {
+        name: 'SpendingCalendar',
+        component: SpendingCalendar,
+        description: 'Monthly calendar view showing subscription renewal dates with colored dots and daily cost details. Use when the user asks about their schedule, calendar, renewal dates, or when things renew.',
+        propsSchema: spendingCalendarSchema,
+    },
+    {
+        name: 'SpendingAnalytics',
+        component: SpendingAnalytics,
+        description: 'Spending analytics with donut chart (category breakdown), bar chart (6-month trends), and top 3 subscriptions list. Use when the user asks about spending breakdown, analytics, expenses, or category analysis.',
+        propsSchema: spendingAnalyticsSchema,
+    },
+    {
+        name: 'SavingsSimulator',
+        component: SavingsSimulator,
+        description: 'Interactive savings simulator with toggle switches per subscription. AI pre-toggles recommended cancellations (zombies). Shows monthly/yearly/5-year savings and fun comparisons. Use when the user asks how much they can save, wants to simulate cancellations, or asks what to cancel.',
+        propsSchema: savingsSimulatorSchema,
+    },
+    {
+        name: 'CancellationStagingCard',
+        component: CancellationStagingCard,
+        description: 'Staged cancellation card with draft/confirm/cancelled workflow. ALWAYS use this when user wants to cancel, modify, or remove a subscription. Start with status="draft". Update props when user refines the request. Only change status to "cancelled" after user confirms.',
+        propsSchema: cancellationStagingCardSchema,
+    },
+    {
+        name: 'SubscriptionHealthScore',
+        component: SubscriptionHealthScore,
+        description: 'Health score dashboard with circular gauge (A-F grade), 4 metric cards (zombie ratio, cost efficiency, trial risk, diversity), and AI recommendations. Use when user asks for health score, health check, subscription grade, or overall assessment.',
+        propsSchema: subscriptionHealthScoreSchema,
+    },
+    {
+        name: 'CostSplitCard',
+        component: CostSplitCard,
+        description: 'Family/shared cost splitting card. Shows split visualization bar, member list with amounts, add/remove members, equal/custom toggle, and copy link. Use when user wants to split a subscription cost, share expenses, or set up family sharing.',
+        propsSchema: costSplitCardSchema,
     },
 ];
 
@@ -201,11 +425,450 @@ const generateBurnerCardTool = defineTool({
     },
 });
 
+const getAlertsTool = defineTool({
+    name: 'getAlerts',
+    description: 'Scan subscriptions for issues: price hikes, expiring trials (<7d), zombie subscriptions (>90d inactive), and upcoming renewals (<3d). Returns alerts sorted by severity.',
+    inputSchema: z.object({}),
+    outputSchema: alertCardSchema,
+    tool: async () => {
+        const subs = mockSubscriptions;
+        const alerts: Array<{
+            id: string;
+            severity: 'critical' | 'warning' | 'info';
+            title: string;
+            description: string;
+            subscriptionName: string;
+            actionLabel: string;
+            actionType: string;
+        }> = [];
+
+        for (const sub of subs) {
+            if (sub.status === 'price_hike' && sub.priceChange) {
+                alerts.push({
+                    id: `alert-price-${sub.id}`,
+                    severity: 'critical',
+                    title: 'Price Increase Detected',
+                    description: `Price went from $${sub.priceChange.from.toFixed(2)} to $${sub.priceChange.to.toFixed(2)}/mo`,
+                    subscriptionName: sub.name,
+                    actionLabel: 'Review',
+                    actionType: 'review',
+                });
+            }
+            if (sub.status === 'trial_ending' && sub.trialEndsIn !== undefined && sub.trialEndsIn < 7) {
+                alerts.push({
+                    id: `alert-trial-${sub.id}`,
+                    severity: 'critical',
+                    title: `Trial Expires in ${sub.trialEndsIn} Days`,
+                    description: `${sub.name} trial will auto-convert to $${sub.cost.toFixed(2)}/mo`,
+                    subscriptionName: sub.name,
+                    actionLabel: 'Cancel',
+                    actionType: 'cancel',
+                });
+            }
+            if (sub.status === 'zombie' && sub.lastActivity) {
+                const daysSinceActivity = Math.floor((Date.now() - new Date(sub.lastActivity).getTime()) / (1000 * 60 * 60 * 24));
+                if (daysSinceActivity > 90) {
+                    alerts.push({
+                        id: `alert-zombie-${sub.id}`,
+                        severity: 'warning',
+                        title: `Unused for ${daysSinceActivity} Days`,
+                        description: `You're paying $${sub.cost.toFixed(2)}/mo for a service you haven't used`,
+                        subscriptionName: sub.name,
+                        actionLabel: 'Cancel',
+                        actionType: 'cancel',
+                    });
+                }
+            }
+            if (sub.renewalDate) {
+                const daysUntilRenewal = Math.floor((new Date(sub.renewalDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                if (daysUntilRenewal >= 0 && daysUntilRenewal < 3) {
+                    alerts.push({
+                        id: `alert-renewal-${sub.id}`,
+                        severity: 'info',
+                        title: `Renews in ${daysUntilRenewal} Day${daysUntilRenewal !== 1 ? 's' : ''}`,
+                        description: `$${sub.cost.toFixed(2)} will be charged soon`,
+                        subscriptionName: sub.name,
+                        actionLabel: 'Review',
+                        actionType: 'review',
+                    });
+                }
+            }
+        }
+
+        // Sort: critical first, then warning, then info
+        const order = { critical: 0, warning: 1, info: 2 };
+        alerts.sort((a, b) => order[a.severity] - order[b.severity]);
+
+        return { alerts, title: 'Smart Alerts' };
+    },
+});
+
+const getRenewalCalendarTool = defineTool({
+    name: 'getRenewalCalendar',
+    description: 'Get subscription renewal dates mapped to a monthly calendar grid. Shows which subscriptions renew on which days.',
+    inputSchema: z.object({
+        month: z.number().optional().describe('Month number (0-11), defaults to current month'),
+        year: z.number().optional().describe('Year, defaults to current year'),
+    }),
+    outputSchema: spendingCalendarSchema,
+    tool: ({ month, year }) => {
+        const now = new Date();
+        const targetMonth = month ?? now.getMonth();
+        const targetYear = year ?? now.getFullYear();
+
+        const daysMap: Record<string, { subscriptions: Array<{ name: string; cost: number; status: string; logo: string }>; totalCost: number }> = {};
+
+        for (const sub of mockSubscriptions) {
+            if (!sub.renewalDate) continue;
+            const renewal = new Date(sub.renewalDate);
+            if (renewal.getMonth() === targetMonth && renewal.getFullYear() === targetYear) {
+                const dateKey = renewal.toISOString().split('T')[0];
+                if (!daysMap[dateKey]) {
+                    daysMap[dateKey] = { subscriptions: [], totalCost: 0 };
+                }
+                daysMap[dateKey].subscriptions.push({
+                    name: sub.name,
+                    cost: sub.cost,
+                    status: sub.status,
+                    logo: sub.logo,
+                });
+                daysMap[dateKey].totalCost += sub.cost;
+            }
+        }
+
+        const days = Object.entries(daysMap).map(([date, data]) => ({
+            date,
+            subscriptions: data.subscriptions,
+            totalCost: Math.round(data.totalCost * 100) / 100,
+        }));
+
+        const monthlyTotal = mockSubscriptions.reduce((sum, s) => sum + s.cost, 0);
+
+        return {
+            month: targetMonth,
+            year: targetYear,
+            days,
+            monthlyTotal: Math.round(monthlyTotal * 100) / 100,
+            comparedToLastMonth: -3.2,
+        };
+    },
+});
+
+const CATEGORY_COLORS: Record<string, string> = {
+    Entertainment: '#3b82f6',
+    Music: '#22c55e',
+    Productivity: '#a855f7',
+    'AI Tools': '#10b981',
+    Software: '#6366f1',
+    Fitness: '#f97316',
+    Professional: '#0ea5e9',
+    Design: '#ec4899',
+    Cloud: '#06b6d4',
+    Health: '#14b8a6',
+};
+
+const getSpendingAnalyticsTool = defineTool({
+    name: 'getSpendingAnalytics',
+    description: 'Get spending analytics: category breakdown, 6-month trends, and top subscriptions by cost.',
+    inputSchema: z.object({}),
+    outputSchema: spendingAnalyticsSchema,
+    tool: async () => {
+        const subs = mockSubscriptions;
+        const totalMonthly = subs.reduce((sum, s) => sum + s.cost, 0);
+
+        // Category breakdown
+        const categoryMap: Record<string, number> = {};
+        for (const sub of subs) {
+            categoryMap[sub.category] = (categoryMap[sub.category] || 0) + sub.cost;
+        }
+        const categories = Object.entries(categoryMap)
+            .map(([category, amount]) => ({
+                category,
+                amount: Math.round(amount * 100) / 100,
+                color: CATEGORY_COLORS[category] || '#94a3b8',
+                percentage: Math.round((amount / totalMonthly) * 100),
+            }))
+            .sort((a, b) => b.amount - a.amount);
+
+        // Simulated 6-month trends
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const now = new Date();
+        const monthlyTrends = Array.from({ length: 6 }, (_, i) => {
+            const monthIndex = (now.getMonth() - 5 + i + 12) % 12;
+            const variance = (Math.random() - 0.5) * 40;
+            return {
+                month: monthNames[monthIndex],
+                amount: Math.round((totalMonthly + variance) * 100) / 100,
+            };
+        });
+
+        // Top 3
+        const topSubscriptions = [...subs]
+            .sort((a, b) => b.cost - a.cost)
+            .slice(0, 3)
+            .map(s => ({
+                name: s.name,
+                cost: s.cost,
+                logo: s.logo,
+                percentage: Math.round((s.cost / totalMonthly) * 100),
+            }));
+
+        return {
+            categories,
+            monthlyTrends,
+            topSubscriptions,
+            totalMonthly: Math.round(totalMonthly * 100) / 100,
+            monthOverMonthChange: -3.2,
+        };
+    },
+});
+
+const executeCancellationTool = defineTool({
+    name: 'executeCancellation',
+    description: 'Execute a confirmed cancellation. Only call AFTER user explicitly confirms via UI button or chat message.',
+    inputSchema: z.object({
+        subscriptionId: z.string().describe('ID of the subscription to cancel'),
+        serviceName: z.string().describe('Name of the service'),
+        reason: z.string().optional().describe('Reason for cancellation'),
+    }),
+    outputSchema: z.object({
+        success: z.boolean(),
+        serviceName: z.string(),
+        monthlySavings: z.number(),
+        message: z.string(),
+    }),
+    tool: ({ subscriptionId, serviceName }) => {
+        const sub = mockSubscriptions.find(
+            s => s.id === subscriptionId || s.name.toLowerCase() === serviceName.toLowerCase()
+        );
+        return {
+            success: true,
+            serviceName: sub?.name ?? serviceName,
+            monthlySavings: sub?.cost ?? 0,
+            message: `${sub?.name ?? serviceName} has been cancelled successfully.`,
+        };
+    },
+});
+
+// Known services database for subscription lookup
+const knownServicesDB: Record<string, { cost: number; category: string; logo: string }> = {
+    'netflix': { cost: 15.99, category: 'Entertainment', logo: '🎬' },
+    'spotify': { cost: 10.99, category: 'Music', logo: '🎵' },
+    'adobe': { cost: 59.99, category: 'Productivity', logo: '🎨' },
+    'adobe creative cloud': { cost: 59.99, category: 'Productivity', logo: '🎨' },
+    'chatgpt': { cost: 20.00, category: 'AI Tools', logo: '🤖' },
+    'openai': { cost: 20.00, category: 'AI Tools', logo: '🤖' },
+    'claude': { cost: 20.00, category: 'AI Tools', logo: '🤖' },
+    'cursor': { cost: 20.00, category: 'Developer', logo: '💻' },
+    'perplexity': { cost: 20.00, category: 'AI Tools', logo: '🔍' },
+    'disney+': { cost: 13.99, category: 'Entertainment', logo: '🏰' },
+    'disney': { cost: 13.99, category: 'Entertainment', logo: '🏰' },
+    'hbo max': { cost: 15.99, category: 'Entertainment', logo: '📺' },
+    'youtube premium': { cost: 13.99, category: 'Entertainment', logo: '▶️' },
+    'youtube': { cost: 13.99, category: 'Entertainment', logo: '▶️' },
+    'amazon prime': { cost: 14.99, category: 'Shopping', logo: '📦' },
+    'hulu': { cost: 17.99, category: 'Entertainment', logo: '📺' },
+    'apple music': { cost: 10.99, category: 'Music', logo: '🍎' },
+    'apple tv': { cost: 9.99, category: 'Entertainment', logo: '🍎' },
+    'icloud': { cost: 2.99, category: 'Storage', logo: '☁️' },
+    'dropbox': { cost: 11.99, category: 'Storage', logo: '📁' },
+    'google one': { cost: 2.99, category: 'Storage', logo: '☁️' },
+    'notion': { cost: 10.00, category: 'Productivity', logo: '📝' },
+    'figma': { cost: 15.00, category: 'Design', logo: '✏️' },
+    'canva': { cost: 12.99, category: 'Design', logo: '🖼️' },
+    'grammarly': { cost: 12.00, category: 'Productivity', logo: '📖' },
+    'linkedin premium': { cost: 29.99, category: 'Professional', logo: '💼' },
+    'headspace': { cost: 12.99, category: 'Health', logo: '🧘' },
+    'calm': { cost: 14.99, category: 'Health', logo: '🌊' },
+    'github': { cost: 4.00, category: 'Developer', logo: '💻' },
+    'github copilot': { cost: 10.00, category: 'Developer', logo: '💻' },
+    'aws': { cost: 45.00, category: 'Cloud', logo: '☁️' },
+    'planet fitness': { cost: 24.99, category: 'Fitness', logo: '🏋️' },
+    'twitch': { cost: 9.99, category: 'Entertainment', logo: '🎮' },
+    'slack': { cost: 8.75, category: 'Productivity', logo: '💬' },
+    'zoom': { cost: 13.33, category: 'Productivity', logo: '📹' },
+    'microsoft 365': { cost: 9.99, category: 'Productivity', logo: '📊' },
+    'duolingo': { cost: 6.99, category: 'Education', logo: '🦉' },
+    'crunchyroll': { cost: 7.99, category: 'Entertainment', logo: '🎌' },
+    'paramount+': { cost: 11.99, category: 'Entertainment', logo: '📺' },
+    'nordvpn': { cost: 12.99, category: 'Security', logo: '🔒' },
+    '1password': { cost: 2.99, category: 'Security', logo: '🔑' },
+    'vercel': { cost: 20.00, category: 'Developer', logo: '▲' },
+    'supabase': { cost: 25.00, category: 'Developer', logo: '💻' },
+    'linear': { cost: 8.00, category: 'Productivity', logo: '📋' },
+    'midjourney': { cost: 10.00, category: 'AI Tools', logo: '🎨' },
+};
+
+const lookupSubscriptionInfoTool = defineTool({
+    name: 'lookupSubscriptionInfo',
+    description: 'Look up subscription service info (cost, category, logo) for one or more services. ALWAYS call this before rendering SubscriptionDraftList so you have accurate data.',
+    inputSchema: z.object({
+        serviceNames: z.array(z.string()).describe('Array of service names to look up, e.g. ["Netflix", "Canva", "Hulu"]'),
+    }),
+    outputSchema: z.object({
+        results: z.array(z.object({
+            name: z.string(),
+            cost: z.number(),
+            category: z.string(),
+            logo: z.string(),
+            found: z.boolean(),
+        })),
+    }),
+    tool: ({ serviceNames }) => {
+        const results = serviceNames.map(name => {
+            const lower = name.toLowerCase().trim();
+            // Exact match
+            if (knownServicesDB[lower]) {
+                const info = knownServicesDB[lower];
+                return { name, cost: info.cost, category: info.category, logo: info.logo, found: true };
+            }
+            // Partial match
+            const key = Object.keys(knownServicesDB).find(
+                k => k.includes(lower) || lower.includes(k)
+            );
+            if (key) {
+                const info = knownServicesDB[key];
+                return { name, cost: info.cost, category: info.category, logo: info.logo, found: true };
+            }
+            // Unknown service — return defaults
+            return { name, cost: 9.99, category: 'Other', logo: '📦', found: false };
+        });
+        return { results };
+    },
+});
+
+const analyzeSubscriptionHealthTool = defineTool({
+    name: 'analyzeSubscriptionHealth',
+    description: 'Analyze the health of user subscriptions. Returns a health score (0-100), grade (A-F), metric breakdown, and recommendations.',
+    inputSchema: z.object({}),
+    outputSchema: subscriptionHealthScoreSchema,
+    tool: async () => {
+        const subs = mockSubscriptions;
+        const total = subs.length;
+        if (total === 0) {
+            return {
+                overallScore: 100,
+                grade: 'A' as const,
+                metrics: { zombieRatio: 0, costEfficiency: 100, trialRisk: 0, categoryDiversity: 100 },
+                recommendations: [{ type: 'good' as const, message: 'No subscriptions to analyze yet!' }],
+                totalMonthly: 0,
+                subscriptionCount: 0,
+            };
+        }
+
+        const zombies = subs.filter(s => s.status === 'zombie');
+        const trials = subs.filter(s => s.status === 'trial_ending' && (s.trialEndsIn ?? 99) < 7);
+        const categories = new Set(subs.map(s => s.category));
+        const totalMonthly = subs.reduce((sum, s) => sum + s.cost, 0);
+        const avgCost = totalMonthly / total;
+
+        // Metrics
+        const zombieRatio = Math.round((zombies.length / total) * 100);
+        const costEfficiency = Math.max(0, Math.min(100, Math.round(100 - (avgCost > 20 ? (avgCost - 20) * 2 : 0))));
+        const trialRisk = trials.length;
+        const categoryDiversity = Math.min(100, Math.round((categories.size / Math.max(total, 1)) * 100));
+
+        // Overall score: weighted average
+        const zombieScore = Math.max(0, 100 - zombieRatio * 2);
+        const trialScore = Math.max(0, 100 - trialRisk * 25);
+        const overallScore = Math.round(
+            zombieScore * 0.35 + costEfficiency * 0.25 + trialScore * 0.2 + categoryDiversity * 0.2
+        );
+
+        const grade = overallScore >= 90 ? 'A' as const
+            : overallScore >= 75 ? 'B' as const
+            : overallScore >= 60 ? 'C' as const
+            : overallScore >= 40 ? 'D' as const
+            : 'F' as const;
+
+        // Recommendations
+        const recommendations: Array<{
+            type: 'cancel' | 'downgrade' | 'watch' | 'good';
+            message: string;
+            subscriptionName?: string;
+            potentialSavings?: number;
+        }> = [];
+
+        for (const z of zombies) {
+            recommendations.push({
+                type: 'cancel',
+                message: `You haven't used ${z.name} in months. Consider cancelling.`,
+                subscriptionName: z.name,
+                potentialSavings: z.cost,
+            });
+        }
+        for (const t of trials) {
+            recommendations.push({
+                type: 'watch',
+                message: `${t.name} trial ends in ${t.trialEndsIn} days — will auto-charge $${t.cost.toFixed(2)}/mo.`,
+                subscriptionName: t.name,
+                potentialSavings: t.cost,
+            });
+        }
+        const expensive = subs.filter(s => s.cost > 30 && s.status === 'active').sort((a, b) => b.cost - a.cost);
+        if (expensive.length > 0) {
+            recommendations.push({
+                type: 'downgrade',
+                message: `${expensive[0].name} is your most expensive at $${expensive[0].cost.toFixed(2)}/mo. Check if a cheaper plan exists.`,
+                subscriptionName: expensive[0].name,
+            });
+        }
+        if (recommendations.length === 0) {
+            recommendations.push({ type: 'good', message: 'Your subscriptions look healthy! No issues detected.' });
+        }
+
+        return {
+            overallScore,
+            grade,
+            metrics: { zombieRatio, costEfficiency, trialRisk, categoryDiversity },
+            recommendations,
+            totalMonthly: Math.round(totalMonthly * 100) / 100,
+            subscriptionCount: total,
+        };
+    },
+});
+
+const calculateCostSplitTool = defineTool({
+    name: 'calculateCostSplit',
+    description: 'Calculate how to split a subscription cost between multiple people. Returns member shares and split visualization data.',
+    inputSchema: z.object({
+        subscriptionName: z.string().describe('Name of the subscription to split'),
+        totalCost: z.number().describe('Monthly cost to split'),
+        memberNames: z.array(z.string()).describe('Names of people sharing the cost'),
+        splitType: z.enum(['equal', 'custom']).optional().describe('Split method, default equal'),
+    }),
+    outputSchema: costSplitCardSchema,
+    tool: ({ subscriptionName, totalCost, memberNames, splitType }) => {
+        const count = memberNames.length;
+        const share = Math.round((totalCost / count) * 100) / 100;
+        const pct = Math.round(100 / count);
+        return {
+            subscriptionName,
+            totalCost,
+            splitType: splitType || 'equal',
+            members: memberNames.map(name => ({
+                name,
+                share,
+                percentage: pct,
+                isPaid: Math.random() > 0.5,
+            })),
+            currency: '$',
+        };
+    },
+});
+
 export const tamboTools = [
     getSubscriptionsTool,
     getCancellationPathTool,
     getZombieSubscriptionsTool,
     generateBurnerCardTool,
+    getAlertsTool,
+    getRenewalCalendarTool,
+    getSpendingAnalyticsTool,
+    executeCancellationTool,
+    lookupSubscriptionInfoTool,
+    analyzeSubscriptionHealthTool,
+    calculateCostSplitTool,
 ];
 
 // ---------------------------------------------------------------------------
@@ -219,18 +882,51 @@ Your personality:
 - You're on the user's side against corporations trying to keep them subscribed
 - You're direct, helpful, and slightly rebellious
 
+CORE BEHAVIOR: THE "SAFETY LATCH" PROTOCOL
+When a user expresses intent to CANCEL, MODIFY, or DELETE a subscription:
+1. Identify: Find the subscription. If ambiguous, ask for clarification.
+2. Stage: Render CancellationStagingCard with status='draft', pre-fill reason if mentioned.
+3. Refine: If user corrects details ("actually I meant Disney+"), UPDATE the card's props (don't create a new one).
+4. Execute: Only when user clicks Confirm or says "go ahead", call executeCancellation tool and update status to 'cancelled'.
+NEVER skip the draft stage. NEVER auto-cancel. The user MUST confirm.
+
 Your workflow:
 1. When scanning/viewing subscriptions: Use getSubscriptions tool first, then render SubscriptionGraph and MetricCards with the data
-2. When canceling: Use getCancellationPath tool first, then render CancellationRoadmap with the result
+2. When canceling: Render CancellationStagingCard with status='draft'. Pre-fill serviceName, currentCost, and subscriptionId from known data. Add warningMessage if relevant (e.g., early termination fees). Wait for user confirmation before calling executeCancellation.
 3. When creating trial shields: Use generateBurnerCard tool first, then render VirtualBurnerCard with the result
 4. When showing zombies: Use getZombieSubscriptions tool first, then explain the savings
+5. When adding subscriptions (user says "add", "I have", "track", or lists services):
+   a. FIRST call lookupSubscriptionInfo with the service names to get accurate costs, categories, and logos.
+   b. THEN render SubscriptionDraftList with the drafts array populated from the lookup results. Include confidenceScore (0.95 for found services, 0.6 for unknown).
+   c. If the user corrects a detail ("actually Spotify is $11.99"), update the component props.
+   d. The user clicks "Add to Dashboard" in the component to confirm.
+   IMPORTANT: You MUST render the SubscriptionDraftList component. Do NOT just respond with text.
+6. When showing alerts/issues: Use getAlerts tool first, then render AlertCard with the results. Alert action buttons are live — clicking "Cancel" sends a cancel request, clicking "Review" opens a review. Respond accordingly.
+7. When showing calendar/schedule: Use getRenewalCalendar tool first, then render SpendingCalendar with the results
+8. When showing analytics/expenses/breakdown: Use getSpendingAnalytics tool first, then render SpendingAnalytics with the results
+9. When simulating savings: Use getSubscriptions tool first, then render SavingsSimulator. Set recommended=true for zombie subscriptions.
+10. When showing cancellation roadmap/steps: Use getCancellationPath tool first, then render CancellationRoadmap with the result
+11. When showing health score/grade/health check: Use analyzeSubscriptionHealth tool first, then render SubscriptionHealthScore with the results. This gives users an A-F grade with detailed metrics.
+12. When splitting costs/family sharing: Use calculateCostSplit tool with the subscription name, cost, and member names, then render CostSplitCard with the results. Users can add/remove members and toggle equal/custom split.
+13. When user sends an IMAGE (receipt, screenshot, billing email): Analyze the image for subscription names, costs, and billing details. Extract all subscriptions found and render SubscriptionDraftList with the results. If unsure about a charge, set confidenceScore low (0.5).
 
 Component usage:
 - SubscriptionGraph: Network visualization of all subscriptions, clicking nodes suggests cancellation
 - MetricCards: Quick summary stats, use alongside SubscriptionGraph
+- CancellationStagingCard: Staged cancellation with draft/confirm/cancelled workflow. ALWAYS use when user wants to cancel. Start with status='draft'.
 - CancellationRoadmap: Step-by-step dark pattern navigation with legal script
 - VirtualBurnerCard: Virtual card with countdown timer for trial protection
+- SubscriptionDraftList: MUST render this when user wants to add/track subscriptions. Shows editable drafts with "Add to Dashboard" approval button. Call lookupSubscriptionInfo first to get accurate data.
+- AlertCard: Smart alerts for subscription issues. Action buttons are LIVE — they trigger follow-up messages in chat. Respond to "Cancel X" with CancellationStagingCard, "Review X" with subscription details.
+- SpendingCalendar: Monthly calendar with renewal date markers and daily detail view
+- SpendingAnalytics: Spending breakdown with donut chart, bar chart trends, and top subscriptions
+- SavingsSimulator: Interactive toggle-based savings calculator with fun comparisons
+- SubscriptionHealthScore: Health score gauge (A-F) with 4 metrics and AI recommendations. Great for first-time health checks.
+- CostSplitCard: Family/shared cost splitting with visual bar, member list, add/remove, equal/custom toggle, copy link.
 
 Be dramatic about findings: "I found your account bleeding $127.96/month to services you haven't touched in months!"
 Be empathetic about cancellation: "They really buried this one deep. Watch out for the 'Are you sure?' traps..."
-Be protective about trials: "This card self-destructs in 7 days. They'll never bill you."`;
+Be protective about trials: "This card self-destructs in 7 days. They'll never bill you."
+Be helpful about images: "I see a receipt! Let me scan it for subscription charges..."
+Be insightful about health: "Your subscription health score is C — here's what's dragging it down..."
+Be friendly about splitting: "Fair's fair! Here's how to split that Netflix bill three ways."`;

@@ -23,7 +23,7 @@ export function TamboWrapper({ children }: TamboWrapperProps) {
       tools={tamboTools}
       initialMessages={[
         {
-          role: 'assistant',
+          role: 'system',
           content: [{ type: 'text', text: systemPrompt }],
         },
       ]}

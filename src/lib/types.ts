@@ -11,4 +11,8 @@ export interface Subscription {
   renewalDate?: Date;
   trialEndsIn?: number;
   priceChange?: { from: number; to: number };
+  billingCycle?: 'monthly' | 'annual' | 'weekly';
+  currency?: string;
+  confidenceScore?: number;
+  sourceText?: string;
 }

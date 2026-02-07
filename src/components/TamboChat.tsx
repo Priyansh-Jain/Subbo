@@ -2,8 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bot, ChevronRight, Mic, Paperclip, Sparkles, X, Zap } from 'lucide-react';
-import { ReviewCard } from './ReviewCard';
+import { Bot, ChevronRight, Image as ImageIcon, Mic, Paperclip, X, Zap } from 'lucide-react';
 import {
   useTamboContextAttachment,
   useTamboSuggestions,
@@ -21,6 +20,7 @@ interface TamboChatProps {
   subscriptions?: Subscription[];
   onAddSubscription?: (sub: Subscription) => void;
   onAddMultipleSubscriptions?: (subs: Subscription[]) => void;
+  onDetectedSubscriptions?: (subs: Subscription[]) => void;
 }
 
 export function TamboChat({
@@ -30,6 +30,7 @@ export function TamboChat({
   subscriptions = [],
   onAddSubscription,
   onAddMultipleSubscriptions,
+  onDetectedSubscriptions,
 }: TamboChatProps) {
   const hasApiKey = Boolean(process.env.NEXT_PUBLIC_TAMBO_API_KEY);
 
@@ -42,19 +43,20 @@ export function TamboChat({
         subscriptions={subscriptions}
         onAddSubscription={onAddSubscription}
         onAddMultipleSubscriptions={onAddMultipleSubscriptions}
+        onDetectedSubscriptions={onDetectedSubscriptions}
       />
     );
   }
 
-  return <RealTamboChat onSubmitFallback={onSubmitFallback} selectedSubscription={selectedSubscription} potentialSavings={potentialSavings} />;
+  return <RealTamboChat onSubmitFallback={onSubmitFallback} selectedSubscription={selectedSubscription} potentialSavings={potentialSavings} onDetectedSubscriptions={onDetectedSubscriptions} />;
 }
 
 /* ─── Bot Avatar ────────────────────────────────────────────────── */
 
 function BotAvatar() {
   return (
-    <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-      <Bot className="w-4 h-4 text-emerald-600" />
+    <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center flex-shrink-0">
+      <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
     </div>
   );
 }
@@ -70,15 +72,23 @@ const STAGE_LABELS: Record<string, string> = {
 
 /* ─── Real Tambo Chat (Live API) ────────────────────────────────── */
 
-function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSavings }: TamboChatProps) {
+function RealTamboChat({ onSubmitFallback, onDetectedSubscriptions }: TamboChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { thread } = useTamboThread();
-  const { value, setValue, submit, isPending } = useTamboThreadInput();
-  const { generationStage, isIdle } = useTamboGenerationStage();
+  const { value, setValue, submit, isPending, images, addImage, removeImage } = useTamboThreadInput();
+  const { generationStage } = useTamboGenerationStage();
   const { attachments, removeContextAttachment, clearContextAttachments } = useTamboContextAttachment();
   const suggestionsState = useTamboSuggestions({ maxSuggestions: 3 });
   const voice = useTamboVoice();
   const handledTranscriptRef = useRef<string | null>(null);
+
+  // Local message history to preserve ALL messages across SDK thread transitions and errors.
+  // The Tambo SDK uses optimistic updates that can be rolled back on errors or
+  // lost during placeholder→real thread switches when tool calls are involved.
+  const [localHistory, setLocalHistory] = useState<Array<{ id: string; role: 'user' | 'assistant'; text: string }>>([]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const lastSubmittedTextRef = useRef<string>('');
 
   useEffect(() => {
     if (!voice.transcript || voice.transcript === handledTranscriptRef.current) return;
@@ -86,43 +96,206 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
     setValue(prev => (prev ? `${prev} ${voice.transcript ?? ''}` : voice.transcript ?? ''));
   }, [voice.transcript, setValue]);
 
+  // Sync thread messages into local history so they persist across thread resets.
+  // Also remove local entries once they appear in the SDK thread (avoids duplicates).
+  useEffect(() => {
+    const threadMsgs = (thread?.messages ?? []).filter(m => m.role === 'user' || m.role === 'assistant');
+    if (threadMsgs.length === 0) return;
+
+    setLocalHistory(prev => {
+      // Build a set of texts already in local history for fast lookup
+      const localTexts = new Set(prev.map(m => m.text));
+
+      // Find new messages from SDK thread not in local history
+      const newEntries: typeof prev = [];
+      for (const msg of threadMsgs) {
+        const text = formatMessageText(msg.content).trim();
+        if (text && !localTexts.has(text)) {
+          newEntries.push({ id: msg.id, role: msg.role as 'user' | 'assistant', text });
+          localTexts.add(text);
+        }
+      }
+
+      if (newEntries.length === 0) return prev;
+      return [...prev, ...newEntries];
+    });
+  }, [thread?.messages]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [thread?.messages]);
+  }, [thread?.messages, localHistory]);
+
+  /** Actually send the current input via the SDK, with one automatic retry */
+  const doSubmit = useCallback(async () => {
+    try {
+      await submit();
+    } catch (err) {
+      // Auto-retry once on streaming errors
+      console.warn('Tambo submit: first attempt failed, retrying...', err);
+      try {
+        await submit();
+      } catch (retryErr) {
+        console.error('Tambo submit error after retry:', retryErr);
+        setSubmitError(
+          retryErr instanceof Error ? retryErr.message : 'Failed to send message. Please try again.',
+        );
+      }
+    }
+  }, [submit]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = value.trim();
-    if (!trimmed || isPending) return;
+    const hasImages = images.length > 0;
+    if ((!trimmed && !hasImages) || isPending) return;
 
-    if (onSubmitFallback) {
+    const displayText = trimmed || 'Scan this image for subscription charges and billing info';
+    lastSubmittedTextRef.current = displayText;
+
+    // If sending images with no text, add a default message
+    if (!trimmed && hasImages) {
+      setValue(displayText);
+    }
+
+    // Save user message to local history immediately
+    setLocalHistory(prev => [...prev, { id: `local_${Date.now()}`, role: 'user' as const, text: displayText }]);
+    setSubmitError(null);
+
+    // Detect subscriptions from user message (same as DemoTamboChat)
+    if (trimmed) {
+      const parsedSubs = parseSubscriptionsFromMessage(trimmed);
+      if (parsedSubs.length > 0 && onDetectedSubscriptions) {
+        onDetectedSubscriptions(parsedSubs);
+      }
+    }
+
+    if (onSubmitFallback && trimmed) {
       onSubmitFallback(trimmed);
     }
 
-    await submit();
-  }, [value, isPending, submit, onSubmitFallback]);
+    await doSubmit();
+  }, [value, isPending, doSubmit, onSubmitFallback, onDetectedSubscriptions, images.length, setValue]);
 
-  const messages = thread?.messages ?? [];
-  const lastMessageRole = messages[messages.length - 1]?.role;
+  /** Retry: re-send the last submitted message */
+  const handleRetry = useCallback(async () => {
+    const text = lastSubmittedTextRef.current;
+    if (!text || isPending) return;
+    setSubmitError(null);
+    setValue(text);
+    // Small delay to let setValue flush
+    await new Promise(r => setTimeout(r, 50));
+    await doSubmit();
+  }, [isPending, setValue, doSubmit]);
+
+  // Build display messages: merge SDK thread messages with local history.
+  // Local history ensures messages survive thread resets, errors, and SDK placeholder transitions.
+  const threadMessages = thread?.messages ?? [];
+  const displayMessages = useMemo(() => {
+    const sdkVisible = threadMessages.filter(m => m.role === 'user' || m.role === 'assistant');
+
+    // If SDK has messages, prefer those (they include renderedComponent etc.)
+    // but also append any local-only messages not yet in the SDK thread
+    const sdkTexts = new Set(
+      sdkVisible.map(m => formatMessageText(m.content).trim()),
+    );
+
+    const localOnly = localHistory.filter(lm => !sdkTexts.has(lm.text));
+
+    // Build final list: SDK messages first, then any local-only messages
+    const result = [
+      ...sdkVisible,
+      ...localOnly.map(msg => ({
+        id: msg.id,
+        role: msg.role as 'user' | 'assistant',
+        content: [{ type: 'text' as const, text: msg.text }],
+        renderedComponent: null,
+        createdAt: new Date().toISOString(),
+        componentState: {},
+      })),
+    ];
+
+    return result;
+  }, [threadMessages, localHistory]);
+
+  const lastMessageRole = displayMessages[displayMessages.length - 1]?.role;
   const suggestions = suggestionsState.suggestions ?? [];
   const showSuggestions = !isPending && lastMessageRole === 'assistant' && suggestions.length > 0;
+
+  // Clear error when user starts typing
+  useEffect(() => {
+    if (value.trim()) setSubmitError(null);
+  }, [value]);
 
   const suggestionLabel = useMemo(() => {
     if (!suggestionsState.suggestionsResult.isFetching) return 'TRY SAYING:';
     return 'Generating suggestions...';
   }, [suggestionsState.suggestionsResult.isFetching]);
 
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleFileSelect = useCallback((files: FileList | null) => {
+    if (!files) return;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.type.startsWith('image/')) {
+        addImage(file);
+      }
+    }
+  }, [addImage]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const files = e.clipboardData?.files;
+    if (files && files.length > 0) {
+      const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        imageFiles.forEach(f => addImage(f));
+      }
+    }
+  }, [addImage]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileSelect(e.dataTransfer.files);
+  }, [handleFileSelect]);
+
   return (
-    <div className="w-[360px] border-l border-slate-200 flex flex-col bg-slate-50/50">
+    <div
+      className={`w-full h-full border-l border-slate-200 dark:border-slate-700 flex flex-col bg-slate-50/50 dark:bg-slate-800/50 relative ${isDragging ? 'ring-2 ring-emerald-400 ring-inset' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 bg-emerald-50/80 dark:bg-emerald-900/50 z-50 flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-2 text-emerald-600">
+            <ImageIcon className="w-8 h-8" />
+            <p className="text-sm font-semibold">Drop image here</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-100 bg-white flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <BotAvatar />
           <div>
-            <h2 className="font-semibold text-sm text-slate-900">Tambo AI</h2>
+            <h2 className="font-semibold text-sm text-slate-900 dark:text-white">Tambo AI</h2>
             <div className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${isPending ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 {isPending ? 'Active' : 'Ready'}
               </span>
             </div>
@@ -132,52 +305,80 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-        {messages.length === 0 && (
+        {displayMessages.length === 0 && (
           <div className="flex gap-2.5">
             <BotAvatar />
-            <div className="bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
-              <p className="text-sm text-slate-700 leading-relaxed">
+            <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
+              <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
                 <strong>Welcome!</strong> I&apos;m your AI subscription assistant. I can help you find hidden subscriptions, cancel unwanted services, and protect you from trial traps.
               </p>
             </div>
           </div>
         )}
 
-        {messages.map((message) => (
-          <div key={message.id}>
-            {message.role === 'user' ? (
-              <div className="text-right">
-                <div className="inline-block bg-emerald-600 text-white rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[85%] text-left">
-                  <p className="text-sm">{formatMessageText(message.content)}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2.5">
-                <BotAvatar />
-                <div className="space-y-3 max-w-[85%]">
-                  <div className="bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3">
-                    {formatMessageText(message.content)
-                      .split('\n')
-                      .filter(Boolean)
-                      .map((line, i) => (
-                        <p key={i} className="text-sm text-slate-700 leading-relaxed">
-                          {renderFormattedText(line)}
-                        </p>
-                      ))}
+        {displayMessages.map((message) => {
+          const textContent = formatMessageText(message.content).trim();
+          const hasText = textContent.length > 0;
+
+          // Extract rendered component from message level OR content parts
+          let component = message.renderedComponent ?? null;
+          if (!component && Array.isArray(message.content)) {
+            for (const part of message.content) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const p = part as any;
+              if (p && typeof p === 'object' && 'renderedComponent' in p && p.renderedComponent) {
+                component = p.renderedComponent;
+                break;
+              }
+            }
+          }
+
+          return (
+            <div key={message.id}>
+              {message.role === 'user' ? (
+                <div className="text-right">
+                  <div className="inline-block bg-emerald-600 text-white rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[85%] text-left">
+                    <p className="text-sm">{textContent}</p>
                   </div>
-                  {message.renderedComponent && (
-                    <div>{message.renderedComponent}</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {hasText && (
+                    <div className="flex gap-2.5">
+                      <BotAvatar />
+                      <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
+                        {textContent
+                          .split('\n')
+                          .filter(Boolean)
+                          .map((line, i) => (
+                            <p key={i} className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
+                              {renderFormattedText(line)}
+                            </p>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                  {!hasText && !component && (
+                    <div className="flex gap-2.5">
+                      <BotAvatar />
+                      <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Thinking...</p>
+                      </div>
+                    </div>
+                  )}
+                  {component && (
+                    <div className="pl-10">{component}</div>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
 
         {isPending && (
           <div className="flex gap-2.5">
             <BotAvatar />
-            <div className="flex items-center gap-2 text-slate-500 text-sm bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3">
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
@@ -185,6 +386,23 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
                 <Zap className="w-4 h-4" />
               </motion.div>
               <span>{STAGE_LABELS[generationStage] || 'Investigating...'}</span>
+            </div>
+          </div>
+        )}
+
+        {submitError && (
+          <div className="flex gap-2.5">
+            <BotAvatar />
+            <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
+              <p className="text-xs text-red-600 dark:text-red-400 font-medium">Failed to send: {submitError}</p>
+              <button
+                type="button"
+                onClick={handleRetry}
+                disabled={isPending}
+                className="text-xs text-red-700 dark:text-red-400 underline mt-1 disabled:opacity-50"
+              >
+                Retry
+              </button>
             </div>
           </div>
         )}
@@ -199,10 +417,10 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
                   type="button"
                   onClick={() => suggestionsState.accept({ suggestion, shouldSubmit: true })}
                   disabled={suggestionsState.acceptResult.isPending}
-                  className="w-full flex items-center justify-between px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-50"
+                  className="w-full flex items-center justify-between px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 hover:border-slate-300 dark:hover:border-slate-500 transition-colors disabled:opacity-50"
                 >
                   <span>{suggestion.title}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                 </button>
               ))}
             </div>
@@ -212,16 +430,16 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
       </div>
 
       {/* Input */}
-      <div className="p-3 border-t border-slate-100 bg-white">
+      <div className="p-3 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Context</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Context</span>
             {attachments.map((attachment) => (
               <button
                 key={attachment.id}
                 type="button"
                 onClick={() => removeContextAttachment(attachment.id)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600"
                 title="Remove context"
               >
                 <span className="truncate max-w-[120px]">{attachment.displayName ?? attachment.type ?? 'Attachment'}</span>
@@ -237,6 +455,42 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
             </button>
           </div>
         )}
+
+        {/* Image previews */}
+        {images.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {images.map((img) => (
+              <div key={img.id} className="relative group">
+                <img
+                  src={img.dataUrl}
+                  alt="Upload preview"
+                  className="w-14 h-14 rounded-lg object-cover border border-slate-200 dark:border-slate-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeImage(img.id)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            handleFileSelect(e.target.files);
+            e.target.value = '';
+          }}
+        />
+
         <form onSubmit={handleSubmit}>
           <textarea
             value={value}
@@ -247,8 +501,9 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
                 handleSubmit(e);
               }
             }}
-            placeholder="Ask about subscriptions..."
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none h-16 bg-slate-50/80 focus:bg-white"
+            onPaste={handlePaste}
+            placeholder={images.length > 0 ? 'Describe the image or ask to scan for subscriptions...' : 'Ask about subscriptions...'}
+            className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl text-sm resize-none h-16 bg-slate-50/80 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-600"
             disabled={isPending}
           />
           <div className="flex items-center justify-between mt-2">
@@ -270,15 +525,20 @@ function RealTamboChat({ onSubmitFallback, selectedSubscription, potentialSaving
               </button>
               <button
                 type="button"
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-                title="Attach file"
+                onClick={() => fileInputRef.current?.click()}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                  images.length > 0
+                    ? 'bg-emerald-100 text-emerald-600'
+                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                }`}
+                title="Attach image (receipt, screenshot, billing email)"
               >
                 <Paperclip className="w-4 h-4" />
               </button>
             </div>
             <button
               type="submit"
-              disabled={isPending || !value.trim()}
+              disabled={isPending || (!value.trim() && images.length === 0)}
               className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold rounded-lg transition-colors"
             >
               Send
@@ -335,7 +595,7 @@ function DemoTamboChat({
   selectedSubscription,
   potentialSavings,
   subscriptions = [],
-  onAddMultipleSubscriptions,
+  onDetectedSubscriptions,
 }: TamboChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [localValue, setLocalValue] = useState('');
@@ -343,26 +603,25 @@ function DemoTamboChat({
     id: string;
     role: string;
     content: string;
-    type?: 'text' | 'review';
-    reviewData?: Subscription[];
-    isApproved?: boolean;
   }>>([]);
   const [localPending, setLocalPending] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>(() =>
-    subscriptions.length === 0
-      ? ['Add my subscriptions', 'I have Netflix, Spotify, and Adobe']
-      : ['Scan my subscriptions', 'Find zombie services', 'Create trial shield']
-  );
+  const [dynamicSuggestions, setDynamicSuggestions] = useState<string[] | null>(null);
+  const demoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync suggestions when subscriptions change (e.g., after adding subs)
+  // Cleanup timeout on unmount
   useEffect(() => {
-    if (localMessages.length > 0) return; // Don't override if user already chatting
-    setSuggestions(
-      subscriptions.length === 0
-        ? ['Add my subscriptions', 'I have Netflix, Spotify, and Adobe']
-        : ['Scan my subscriptions', 'Find zombie services', 'Create trial shield']
-    );
-  }, [subscriptions.length, localMessages.length]);
+    return () => {
+      if (demoTimerRef.current) clearTimeout(demoTimerRef.current);
+    };
+  }, []);
+
+  // Derive suggestions: use dynamic if set by chat responses, otherwise compute from subscriptions
+  const suggestions = useMemo(() => {
+    if (dynamicSuggestions !== null) return dynamicSuggestions;
+    return subscriptions.length === 0
+      ? ['Add my subscriptions', 'I have Netflix, Spotify, and Adobe', 'Paste a receipt or email']
+      : ['Scan my subscriptions', 'Find zombie services', 'Create trial shield'];
+  }, [dynamicSuggestions, subscriptions.length]);
 
   const handleSpeechResult = useCallback((transcript: string) => {
     setLocalValue(prev => (prev ? `${prev} ${transcript}` : transcript));
@@ -374,32 +633,6 @@ function DemoTamboChat({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [localMessages]);
 
-  const handleApproveReview = useCallback((messageId: string, subs: Subscription[]) => {
-    if (onAddMultipleSubscriptions) {
-      onAddMultipleSubscriptions(subs);
-
-      // Update message to show approved state
-      setLocalMessages(prev => prev.map(m =>
-        m.id === messageId ? { ...m, isApproved: true } : m
-      ));
-
-      // Add confirmation message
-      setTimeout(() => {
-        setLocalMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `Great! I've added **${subs.length} items** to your tracker. Is there anything else you'd like to update?`,
-        }]);
-      }, 500);
-    }
-  }, [onAddMultipleSubscriptions]);
-
-  const handleDeclineReview = useCallback((messageId: string) => {
-    setLocalMessages(prev => prev.map(m =>
-      m.id === messageId ? { ...m, content: 'Review cancelled.', type: 'text', reviewData: undefined } : m
-    ));
-  }, []);
-
   /** Core submit logic that takes a message string directly (fixes race condition) */
   const submitMessage = useCallback((message: string) => {
     if (!message.trim() || localPending) return;
@@ -409,61 +642,66 @@ function DemoTamboChat({
     setLocalPending(true);
 
     // Parse subscriptions from message
-    const parsedSubs = parseSubscriptionsFromMessage(trimmed);
+    let parsedSubs = parseSubscriptionsFromMessage(trimmed);
+
+    // If no results from name extraction, try receipt/email detection
+    if (parsedSubs.length === 0 && isReceiptOrEmailText(trimmed)) {
+      parsedSubs = parseReceiptText(trimmed);
+    }
 
     // Add user message
     const userMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: trimmed,
-      type: 'text' as const,
     };
 
-    setLocalMessages(prev => {
-      const newMessages = [...prev, userMessage];
+    // Build conversation snapshot for getDemoResponse (before state update)
+    const conversationSnapshot = [...localMessages, userMessage];
 
-      // Simulate response after a delay
-      setTimeout(() => {
-        // If subscriptions found, show review card
-        if (parsedSubs.length > 0) {
-          setLocalMessages(current => [...current, {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `I've detected **${parsedSubs.length} subscriptions** from your message. Please review them before I add them to your dashboard:`,
-            type: 'review',
-            reviewData: parsedSubs
-          }]);
-          setSuggestions(['Approve List', 'I have more', 'Cancel']);
-          setLocalPending(false);
-          return;
+    // Pure state update — no side effects inside the updater
+    setLocalMessages(prev => [...prev, userMessage]);
+
+    // Simulate AI response after a delay (outside the state updater to avoid
+    // React strict-mode double-invocation scheduling duplicate timeouts)
+    demoTimerRef.current = setTimeout(() => {
+      // If subscriptions found, signal to parent (opens center column review)
+      if (parsedSubs.length > 0) {
+        if (onDetectedSubscriptions) {
+          onDetectedSubscriptions(parsedSubs);
         }
-
-        const result = getDemoResponse(
-          trimmed,
-          newMessages,
-          {
-            selected: selectedSubscription ?? undefined,
-            savings: potentialSavings,
-            subscriptions,
-          }
-        );
         setLocalMessages(current => [...current, {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: result.response,
-          type: 'text'
+          content: `I've detected **${parsedSubs.length} recurring charges** from your message. I've pre-filled the details in the review panel for your approval.`,
         }]);
-        setSuggestions(result.suggestions);
+        setDynamicSuggestions(['I have more', 'What else can you do?']);
         setLocalPending(false);
-      }, 1200);
+        return;
+      }
 
-      return newMessages;
-    });
+      const result = getDemoResponse(
+        trimmed,
+        conversationSnapshot,
+        {
+          selected: selectedSubscription ?? undefined,
+          savings: potentialSavings,
+          subscriptions,
+        }
+      );
+      setLocalMessages(current => [...current, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: result.response,
+      }]);
+      setDynamicSuggestions(result.suggestions);
+      setLocalPending(false);
+    }, 1200);
 
     if (onSubmitFallback) {
       onSubmitFallback(trimmed);
     }
-  }, [localPending, onSubmitFallback, selectedSubscription, potentialSavings, subscriptions]);
+  }, [localPending, localMessages, onSubmitFallback, onDetectedSubscriptions, selectedSubscription, potentialSavings, subscriptions]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -476,16 +714,16 @@ function DemoTamboChat({
   }, [submitMessage]);
 
   return (
-    <section className="w-[360px] border-l border-slate-200 bg-slate-50/50 flex flex-col">
+    <section className="w-full h-full border-l border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-100 bg-white flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <BotAvatar />
           <div>
-            <h2 className="font-semibold text-sm text-slate-900">Tambo AI</h2>
+            <h2 className="font-semibold text-sm text-slate-900 dark:text-white">Tambo AI</h2>
             <div className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${localPending ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 {localPending ? 'Active' : 'Ready'}
               </span>
             </div>
@@ -500,8 +738,8 @@ function DemoTamboChat({
             {/* Welcome messages from bot */}
             <div className="flex gap-2.5">
               <BotAvatar />
-              <div className="bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
-                <p className="text-sm text-slate-700 leading-relaxed">
+              <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
+                <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
                   {subscriptions.length === 0
                     ? <><strong>Welcome!</strong> I&apos;m your AI subscription detective. Let&apos;s get started by adding your subscriptions.</>
                     : <>You have <strong>{subscriptions.length} subscription{subscriptions.length !== 1 ? 's' : ''}</strong> tracked, totaling <strong>${subscriptions.reduce((sum, s) => sum + s.cost, 0).toFixed(2)}/month</strong>.</>
@@ -512,8 +750,8 @@ function DemoTamboChat({
 
             <div className="flex gap-2.5">
               <div className="w-8 flex-shrink-0" />
-              <div className="bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
-                <p className="text-sm text-slate-700 leading-relaxed">
+              <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
+                <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
                   {subscriptions.length === 0
                     ? <>Just type something like: <em>&quot;I have Netflix, Spotify, and Adobe&quot;</em> and I&apos;ll automatically detect and add them.</>
                     : <>I can analyze your subscriptions, find unused services, or help you cancel. What would you like to do?</>
@@ -530,7 +768,7 @@ function DemoTamboChat({
                   <button
                     key={i}
                     onClick={() => handleSuggestedPrompt(suggestion)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
                   >
                     <span>{suggestion}</span>
                     <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
@@ -552,29 +790,12 @@ function DemoTamboChat({
             ) : (
               <div className="flex gap-2.5">
                 <BotAvatar />
-                <div className="space-y-3 max-w-[85%]">
-                  {/* Render Review Card if present */}
-                  {message.type === 'review' && message.reviewData && (
-                    <div>
-                      <ReviewCard
-                        subscriptions={message.reviewData}
-                        isApproved={message.isApproved}
-                        onApprove={(subs) => handleApproveReview(message.id, subs)}
-                        onDecline={() => handleDeclineReview(message.id)}
-                      />
-                    </div>
-                  )}
-
-                  {/* Render Text Content — safe rendering, no dangerouslySetInnerHTML */}
-                  {message.content && (
-                    <div className="bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3">
-                      {message.content.split('\n').filter(Boolean).map((line, i) => (
-                        <p key={i} className="text-sm text-slate-700 leading-relaxed">
-                          {renderFormattedText(line)}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+                <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%]">
+                  {message.content.split('\n').filter(Boolean).map((line, i) => (
+                    <p key={i} className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
+                      {renderFormattedText(line)}
+                    </p>
+                  ))}
                 </div>
               </div>
             )}
@@ -584,7 +805,7 @@ function DemoTamboChat({
         {localPending && (
           <div className="flex gap-2.5">
             <BotAvatar />
-            <div className="flex items-center gap-2 text-slate-500 text-sm bg-slate-100 rounded-2xl rounded-tl-none px-4 py-3">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm bg-slate-100 dark:bg-slate-700 rounded-2xl rounded-tl-none px-4 py-3">
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
@@ -618,7 +839,7 @@ function DemoTamboChat({
       </div>
 
       {/* Input Area */}
-      <div className="p-3 border-t border-slate-100 bg-white">
+      <div className="p-3 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
         <form onSubmit={handleSubmit}>
           <textarea
             value={localValue}
@@ -630,7 +851,7 @@ function DemoTamboChat({
               }
             }}
             placeholder="Ask about subscriptions..."
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none h-16 bg-slate-50/80 focus:bg-white"
+            className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl text-sm resize-none h-16 bg-slate-50/80 dark:bg-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-600"
             disabled={localPending}
           />
           <div className="flex items-center justify-between mt-2">
@@ -704,8 +925,13 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 function useSpeechInput(onResult: (transcript: string) => void) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const onResultRef = useRef(onResult);
-  const [isSupported, setIsSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
+
+  // Detect support synchronously (no setState in effect needed)
+  const isSupported = typeof window !== 'undefined' && Boolean(
+    (window as unknown as { SpeechRecognition?: SpeechRecognitionConstructor }).SpeechRecognition
+    || (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionConstructor }).webkitSpeechRecognition
+  );
 
   // Keep ref in sync so we don't recreate recognition on every callback change
   useEffect(() => {
@@ -737,7 +963,6 @@ function useSpeechInput(onResult: (transcript: string) => void) {
     };
 
     recognitionRef.current = recognition;
-    setIsSupported(true);
 
     return () => {
       recognition.onresult = null;
@@ -1007,6 +1232,21 @@ Ready to start saving?`,
     };
   }
 
+  if (lower.includes('paste') && (lower.includes('receipt') || lower.includes('email'))) {
+    return {
+      response: `**Receipt / Email Detection**
+
+Just paste your billing email or receipt text directly into the chat! I can read formats like:
+
+Netflix $15.99
+Spotify $10.99
+Adobe Creative Cloud $59.99
+
+Or paste a forwarded billing email — I'll automatically detect the subscription names and amounts.`,
+      suggestions: ['I have Netflix and Spotify', 'Add my subscriptions', 'How does this work?']
+    };
+  }
+
   if (lower.includes('help') || lower.includes('what can you do')) {
     return {
       response: `I'm Subbo, your subscription detective! Here's what I can do:
@@ -1227,6 +1467,61 @@ function lookupKnownService(name: string): { key: string; info: { cost: number; 
   }
 
   return null;
+}
+
+/** Detect if text looks like a pasted receipt or email (≥2 lines with dollar amounts) */
+function isReceiptOrEmailText(msg: string): boolean {
+  const lines = msg.split('\n').filter(l => l.trim().length > 0);
+  const dollarLines = lines.filter(l => /\$\s*\d+(?:\.\d{1,2})?/.test(l));
+  return dollarLines.length >= 2;
+}
+
+/** Parse receipt/email text line-by-line for "Name $XX.XX" or "$XX.XX Name" patterns */
+function parseReceiptText(text: string): Subscription[] {
+  const lines = text.split('\n').filter(l => l.trim().length > 0);
+  const parsed: Subscription[] = [];
+  const seen = new Set<string>();
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Pattern 1: "Name $XX.XX" or "Name  $XX.XX"
+    let match = trimmed.match(/^(.+?)\s+\$\s*(\d+(?:\.\d{1,2})?)/);
+    // Pattern 2: "$XX.XX Name" or "$XX.XX  Name"
+    if (!match) {
+      match = trimmed.match(/^\$\s*(\d+(?:\.\d{1,2})?)\s+(.+)/);
+      if (match) {
+        // Swap groups so name is [1] and cost is [2]
+        match = [match[0], match[2], match[1]] as unknown as RegExpMatchArray;
+      }
+    }
+
+    if (!match) continue;
+
+    const rawName = match[1].replace(/[-–—:.,]+$/, '').trim();
+    const cost = parseFloat(match[2]);
+
+    if (!rawName || cost <= 0 || rawName.length < 2) continue;
+
+    const dedupeKey = rawName.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const lookup = lookupKnownService(rawName);
+    const info = lookup?.info ?? { cost, category: 'Other', logo: '📦' };
+
+    parsed.push({
+      id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+      name: rawName.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      cost,
+      status: 'active',
+      logo: info.logo,
+      category: info.category,
+      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+  }
+
+  return parsed;
 }
 
 // Helper to parse subscriptions from text — works with ANY service name
