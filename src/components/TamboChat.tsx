@@ -1403,7 +1403,7 @@ function extractServiceNames(message: string): string[] {
 
  // Split by comma, " and ", or " & "
  const rawItems = listText
-  .split(/\s*,\s*|\s+and\s+|\s*&\s*/i)
+  .split(/\s*,\s*(?:and\s+)?|\s+and\s+|\s*&\s*/i)
   .map(s => s.trim())
   .filter(s => s.length > 0);
 
