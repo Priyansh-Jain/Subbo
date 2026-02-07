@@ -345,12 +345,12 @@ export default function LandingPage() {
         }}
       >
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <a href="#" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="flex items-center gap-2.5 hover:opacity-80 transition-opacity cursor-pointer">
             <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center text-white font-bold text-sm">S</div>
             <span className="font-semibold text-zinc-900 text-base tracking-tight">
               SubTrack <sup className="text-[9px] font-bold text-indigo-600 ml-0.5">AI</sup>
             </span>
-          </div>
+          </a>
 
           <div className="hidden md:flex items-center gap-8">
             <a href="#features" className="text-sm text-zinc-500 hover:text-zinc-900 transition-colors">Features</a>

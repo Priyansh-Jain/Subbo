@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
  differenceInDays,
  format,
@@ -167,12 +168,12 @@ export default function Home() {
  <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
  {/* Header */}
  <header className="h-12 border-b border-slate-200 bg-white flex items-center justify-between px-4 sticky top-0 z-50">
- <div className="flex items-center gap-2.5">
+ <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
  <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">S</div>
  <h1 className="font-semibold text-base leading-tight text-slate-900">
  SubTrack <sup className="text-[10px] font-bold text-emerald-600 ml-0.5">AI</sup>
  </h1>
- </div>
+ </Link>
 
  <nav className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
  {tabs.map((tab) => {
