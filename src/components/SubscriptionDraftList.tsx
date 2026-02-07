@@ -123,10 +123,10 @@ export function SubscriptionDraftList({ drafts, sourceText }: SubscriptionDraftL
  return (
  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden mt-3 shadow-sm">
  {/* Header */}
- <div className="bg-slate-50 border-b border-slate-100 px-4 py-2.5 flex items-center justify-between">
+ <div className="bg-slate-50 border-b border-slate-100 px-4 py-3 flex items-center justify-between">
  <div className="flex items-center gap-2">
  <ListChecks className="w-4 h-4 text-slate-500" />
- <h3 className="font-semibold text-slate-800 text-sm">Detected Subscriptions</h3>
+ <h3 className="font-bold text-slate-800 text-sm">Detected Subscriptions</h3>
  </div>
  {validDrafts.length > 0 && (
  <span className="text-[10px] font-medium text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded-full">
@@ -171,7 +171,8 @@ export function SubscriptionDraftList({ drafts, sourceText }: SubscriptionDraftL
  <button
  onClick={handleSave}
  disabled={!actions}
- className="w-full py-2 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+ aria-label={`Add ${validDrafts.length} subscriptions to dashboard`}
+ className="w-full py-2 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:hover:bg-emerald-600 shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500"
  >
  <Check className="w-4 h-4" />
  Add {validDrafts.length} to Dashboard

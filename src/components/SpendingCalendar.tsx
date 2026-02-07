@@ -57,12 +57,12 @@ const STATUS_DOT_COLORS: Record<string, string> = {
 
 function CalendarSkeleton() {
  return (
- <div className="rounded-xl border border-slate-200 bg-white p-4 animate-pulse">
+ <div className="rounded-2xl border border-slate-200 bg-white p-4 animate-pulse">
  <div className="flex justify-between items-center mb-4">
  <div className="h-5 w-32 bg-slate-200 rounded" />
  <div className="flex gap-2">
- <div className="h-7 w-7 bg-slate-200 rounded" />
- <div className="h-7 w-7 bg-slate-200 rounded" />
+ <div className="h-8 w-8 bg-slate-200 rounded" />
+ <div className="h-8 w-8 bg-slate-200 rounded" />
  </div>
  </div>
  <div className="grid grid-cols-7 gap-1">
@@ -119,7 +119,7 @@ export function SpendingCalendar({
  }
 
  return (
- <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+ <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
  {/* Header */}
  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
  <div>
@@ -141,14 +141,14 @@ export function SpendingCalendar({
  <button
  onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}
  aria-label="Previous month"
- className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50"
+ className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500"
  >
  <ChevronLeft className="w-4 h-4" />
  </button>
  <button
  onClick={() => setCurrentMonth(prev => addMonths(prev, 1))}
  aria-label="Next month"
- className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50"
+ className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500"
  >
  <ChevronRight className="w-4 h-4" />
  </button>
@@ -178,7 +178,8 @@ export function SpendingCalendar({
  <button
  key={dateKey}
  onClick={() => { if (hasSubs) setSelectedDate(isSelected ? null : dateKey); }}
- className={`relative h-10 rounded-lg text-xs flex flex-col items-center justify-center transition-colors
+ aria-label={`${format(day, 'MMMM d')}${hasSubs ? `, ${dayData.subscriptions!.length} subscription${dayData.subscriptions!.length !== 1 ? 's' : ''}` : ''}`}
+ className={`relative h-10 rounded-lg text-xs flex flex-col items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500
  ${!inMonth ? 'text-slate-300' : 'text-slate-700'}
  ${today ? 'bg-emerald-50 font-bold text-emerald-700' : ''}
  ${isSelected ? 'bg-slate-100 ring-1 ring-emerald-400' : ''}

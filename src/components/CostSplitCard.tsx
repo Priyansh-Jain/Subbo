@@ -27,7 +27,7 @@ const MEMBER_COLORS = [
 
 function SplitSkeleton() {
  return (
- <div className="rounded-xl border border-slate-200 bg-white p-4 animate-pulse">
+ <div className="rounded-2xl border border-slate-200 bg-white p-4 animate-pulse">
  <div className="h-5 w-40 bg-slate-200 rounded mb-4" />
  <div className="h-4 w-full bg-slate-100 rounded-full mb-4" />
  <div className="space-y-3">
@@ -122,7 +122,7 @@ export function CostSplitCard({
  initial={{ opacity: 0, y: 10 }}
  animate={{ opacity: 1, y: 0 }}
  transition={{ duration: 0.4 }}
- className="rounded-xl border border-slate-200 bg-white overflow-hidden"
+ className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
  >
  {/* Header */}
  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
@@ -224,7 +224,8 @@ export function CostSplitCard({
  {members.length > 1 && (
  <button
  onClick={() => removeMember(i)}
- className="w-5 h-5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0"
+ aria-label={`Remove ${member.name}`}
+ className="w-7 h-7 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500"
  >
  <X className="w-3 h-3" />
  </button>
@@ -246,13 +247,15 @@ export function CostSplitCard({
  onChange={(e) => setNewMemberName(e.target.value)}
  onKeyDown={(e) => e.key === 'Enter' && addMember()}
  placeholder="Name..."
- className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-purple-500 focus:border-purple-500 outline-none"
+ aria-label="New member name"
+ className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:border-purple-500 outline-none"
  autoFocus
  />
  <button
  onClick={addMember}
  disabled={!newMemberName.trim()}
- className="px-3 py-1.5 bg-purple-600 text-white text-xs font-bold rounded-lg disabled:bg-slate-200 disabled:text-slate-400"
+ aria-label="Add member"
+ className="px-3 py-1.5 bg-purple-600 text-white text-xs font-bold rounded-lg disabled:bg-slate-200 disabled:text-slate-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-purple-500"
  >
  Add
  </button>
@@ -281,7 +284,8 @@ export function CostSplitCard({
  </p>
  <button
  onClick={handleCopyLink}
- className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+ aria-label="Copy cost split details"
+ className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 ${
  copied
  ? 'bg-emerald-100 text-emerald-700'
  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

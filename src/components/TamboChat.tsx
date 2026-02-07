@@ -469,7 +469,8 @@ function RealTamboChat({ onSubmitFallback, onDetectedSubscriptions, onApiFailed 
  <button
  type="button"
  onClick={() => removeImage(img.id)}
- className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+ aria-label="Remove image"
+ className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500"
  >
  <X className="w-3 h-3" />
  </button>
@@ -503,6 +504,7 @@ function RealTamboChat({ onSubmitFallback, onDetectedSubscriptions, onApiFailed 
  }}
  onPaste={handlePaste}
  placeholder={images.length > 0 ? 'Describe the image or ask to scan for subscriptions...' : 'Ask about subscriptions...'}
+ aria-label="Chat input for subscription queries"
  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none h-16 bg-slate-50/80 focus:bg-white"
  disabled={isPending}
  />
@@ -526,12 +528,13 @@ function RealTamboChat({ onSubmitFallback, onDetectedSubscriptions, onApiFailed 
  <button
  type="button"
  onClick={() => fileInputRef.current?.click()}
- className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+ className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 ${
  images.length > 0
  ? 'bg-emerald-100 text-emerald-600'
  : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
  }`}
  title="Attach image (receipt, screenshot, billing email)"
+ aria-label="Attach image for scanning"
  >
  <Paperclip className="w-4 h-4" />
  </button>
@@ -871,6 +874,7 @@ function DemoTamboChat({
  }
  }}
  placeholder="Ask about subscriptions..."
+ aria-label="Chat input for subscription queries"
  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none h-16 bg-slate-50/80 focus:bg-white"
  disabled={localPending}
  />
@@ -893,8 +897,9 @@ function DemoTamboChat({
  </button>
  <button
  type="button"
- className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+ className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500"
  title="Attach file"
+ aria-label="Attach file"
  >
  <Paperclip className="w-4 h-4" />
  </button>

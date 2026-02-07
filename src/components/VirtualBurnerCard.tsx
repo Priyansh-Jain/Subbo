@@ -169,7 +169,8 @@ export function VirtualBurnerCard({
  value={effectiveKillDays}
  onChange={(e) => setKillDays(Number(e.target.value))}
  disabled={streamStatus.isStreaming}
- className="w-full"
+ aria-label={`Kill card after ${effectiveKillDays} days`}
+ className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
  />
  <div className="flex justify-between text-xs text-slate-400 mt-1">
  <span>1 day</span>

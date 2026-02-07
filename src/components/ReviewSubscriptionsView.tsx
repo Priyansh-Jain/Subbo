@@ -54,7 +54,8 @@ export function ReviewSubscriptionsView({
  <div className="flex items-center gap-3">
  <button
  onClick={onBack}
- className="text-slate-400 hover:text-slate-600 transition-colors"
+ aria-label="Go back to previous view"
+ className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 cursor-pointer"
  >
  <ArrowLeft className="w-5 h-5" />
  </button>
@@ -68,7 +69,8 @@ export function ReviewSubscriptionsView({
  {visibleSubs.length > 0 && (
  <button
  onClick={handleApproveAll}
- className="text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors"
+ aria-label="Approve all subscriptions"
+ className="text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 rounded cursor-pointer"
  >
  Approve All
  </button>
@@ -112,14 +114,15 @@ export function ReviewSubscriptionsView({
  {/* Actions */}
  <div className="flex items-center gap-1.5 flex-shrink-0">
  {isStaged ? (
- <div className="flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded">
+ <div className="flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-full">
  <Check className="w-3 h-3" />
  Added
  </div>
  ) : (
  <button
  onClick={() => handleAdd(sub.id)}
- className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded shadow-sm transition-colors"
+ aria-label={`Add ${sub.name} to staged subscriptions`}
+ className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 cursor-pointer"
  >
  <Plus className="w-3 h-3" />
  Add
@@ -127,7 +130,8 @@ export function ReviewSubscriptionsView({
  )}
  <button
  onClick={() => handleDismiss(sub.id)}
- className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+ aria-label={`Dismiss ${sub.name}`}
+ className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 cursor-pointer"
  >
  <X className="w-4 h-4" />
  </button>
@@ -143,7 +147,8 @@ export function ReviewSubscriptionsView({
  <div className="flex justify-center pt-4">
  <button
  onClick={handleConfirm}
- className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow transition-colors"
+ aria-label={`Confirm ${stagedIds.size} addition${stagedIds.size !== 1 ? 's' : ''}`}
+ className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500 cursor-pointer"
  >
  Confirm {stagedIds.size} Addition{stagedIds.size !== 1 ? 's' : ''}
  </button>

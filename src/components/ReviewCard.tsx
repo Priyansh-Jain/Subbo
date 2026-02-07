@@ -36,7 +36,7 @@ export function ReviewCard({ subscriptions, onApprove, onDecline, isApproved = f
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm animate-in slide-in-from-bottom-2 duration-300">
       {/* Header */}
       <div className="bg-slate-50 border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-        <h3 className="font-semibold text-slate-800 text-sm">Review Suggestions</h3>
+        <h3 className="font-bold text-slate-800 text-sm">Review Suggestions</h3>
         <span className="text-xs font-medium text-slate-500 bg-slate-200/50 px-2 py-1 rounded-full">
           {subscriptions.length} detected
         </span>
@@ -46,7 +46,7 @@ export function ReviewCard({ subscriptions, onApprove, onDecline, isApproved = f
       <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto custom-scrollbar">
         {subscriptions.map((sub) => (
           <div key={sub.id} className="p-3 hover:bg-slate-50/50 transition-colors flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-lg shadow-sm border border-slate-100/50">
+            <div className="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center text-lg shadow-sm border border-slate-100/50">
               {sub.logo}
             </div>
             <div className="flex-1 min-w-0">
@@ -77,15 +77,17 @@ export function ReviewCard({ subscriptions, onApprove, onDecline, isApproved = f
         </div>
         
         <div className="grid grid-cols-2 gap-2">
-          <button 
+          <button
             onClick={onDecline}
-            className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-200 hover:text-slate-800 transition-colors"
+            aria-label="Discard suggested subscriptions"
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-200 hover:text-slate-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500"
           >
             Discard
           </button>
-          <button 
+          <button
             onClick={() => onApprove(subscriptions)}
-            className="px-4 py-2 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
+            aria-label="Approve all suggested subscriptions"
+            className="px-4 py-2 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500"
           >
             <Check className="w-4 h-4" />
             Approve All

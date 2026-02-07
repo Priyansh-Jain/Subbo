@@ -20,7 +20,7 @@ interface SavingsSimulatorProps {
 
 function SimulatorSkeleton() {
  return (
- <div className="rounded-xl border border-slate-200 bg-white overflow-hidden animate-pulse">
+ <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden animate-pulse">
  <div className="p-4 border-b border-slate-100">
  <div className="h-5 w-40 bg-slate-200 rounded" />
  </div>
@@ -107,7 +107,7 @@ export function SavingsSimulator({
  initial={{ opacity: 0, y: 10 }}
  animate={{ opacity: 1, y: 0 }}
  transition={{ duration: 0.4 }}
- className="rounded-xl border border-slate-200 bg-white overflow-hidden"
+ className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
  >
  {/* Header */}
  <div className="px-4 py-3 border-b border-slate-100">
@@ -131,7 +131,10 @@ export function SavingsSimulator({
  {/* Toggle switch */}
  <button
  onClick={() => handleToggle(sub.id)}
- className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors ${
+ role="switch"
+ aria-checked={!isOff}
+ aria-label={`Toggle ${sub.name} subscription`}
+ className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 ${
  isOff ? 'bg-red-400' : 'bg-emerald-400'
  }`}
  >

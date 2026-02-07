@@ -135,25 +135,27 @@ export function SubscriptionDetailView({ subscription, onBack }: SubscriptionDet
  <div className="space-y-4">
  {/* Cost */}
  <div className="flex flex-col gap-1.5">
- <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Monthly Cost ($)</label>
+ <label htmlFor="sub-cost" className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Monthly Cost ($)</label>
  <input
+ id="sub-cost"
  type="number"
  step="0.01"
  min="0"
  value={cost}
  onChange={(e) => setCost(e.target.value)}
- className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+ className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:border-emerald-500 outline-none transition-all"
  />
  </div>
 
  {/* Category & Billing side-by-side */}
  <div className="grid grid-cols-2 gap-3">
  <div className="flex flex-col gap-1.5">
- <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Category</label>
+ <label htmlFor="sub-category" className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Category</label>
  <select
+ id="sub-category"
  value={category}
  onChange={(e) => setCategory(e.target.value)}
- className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all appearance-none cursor-pointer"
+ className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:border-emerald-500 outline-none transition-all appearance-none cursor-pointer"
  >
  {CATEGORY_OPTIONS.map(c => (
  <option key={c} value={c}>{c}</option>
@@ -165,11 +167,12 @@ export function SubscriptionDetailView({ subscription, onBack }: SubscriptionDet
  </div>
 
  <div className="flex flex-col gap-1.5">
- <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Billing Cycle</label>
+ <label htmlFor="sub-billing" className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Billing Cycle</label>
  <select
+ id="sub-billing"
  value={billing}
  onChange={(e) => setBilling(e.target.value as 'monthly' | 'annual' | 'weekly')}
- className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all appearance-none cursor-pointer"
+ className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:border-emerald-500 outline-none transition-all appearance-none cursor-pointer"
  >
  {BILLING_OPTIONS.map(b => (
  <option key={b.value} value={b.value}>{b.label}</option>
@@ -180,11 +183,12 @@ export function SubscriptionDetailView({ subscription, onBack }: SubscriptionDet
 
  {/* Status */}
  <div className="flex flex-col gap-1.5">
- <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</label>
+ <label htmlFor="sub-status" className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</label>
  <select
+ id="sub-status"
  value={status}
  onChange={(e) => setStatus(e.target.value as SubscriptionStatus)}
- className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all appearance-none cursor-pointer"
+ className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-medium text-slate-900 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:border-emerald-500 outline-none transition-all appearance-none cursor-pointer"
  >
  {STATUS_OPTIONS.map(s => (
  <option key={s.value} value={s.value}>{s.label}</option>
@@ -198,7 +202,8 @@ export function SubscriptionDetailView({ subscription, onBack }: SubscriptionDet
  <button
  onClick={handleSave}
  disabled={!hasChanges || !actions}
- className={`w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+ aria-label="Save subscription changes"
+ className={`w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500 ${
  saved
  ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
  : hasChanges
@@ -213,7 +218,8 @@ export function SubscriptionDetailView({ subscription, onBack }: SubscriptionDet
  <button
  onClick={handleCancelSubscription}
  onMouseLeave={() => setConfirmCancel(false)}
- className={`w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+ aria-label={confirmCancel ? 'Confirm removal' : 'Remove subscription'}
+ className={`w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 ${
  confirmCancel
  ? 'bg-red-600 text-white hover:bg-red-700'
  : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'

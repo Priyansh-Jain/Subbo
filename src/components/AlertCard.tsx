@@ -68,7 +68,7 @@ function AlertSkeleton() {
   return (
     <div className="space-y-3">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="rounded-xl border border-slate-200 bg-white p-4 animate-pulse">
+        <div key={i} className="rounded-2xl border border-slate-200 bg-white p-4 animate-pulse">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-slate-200" />
             <div className="flex-1 space-y-2">
@@ -114,7 +114,7 @@ export function AlertCard({ alerts, title, onAction }: AlertCardProps) {
 
   if (alerts.length === 0) {
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
         <p className="text-sm font-medium text-emerald-700">All clear! No alerts right now.</p>
       </div>
     );
@@ -132,7 +132,7 @@ export function AlertCard({ alerts, title, onAction }: AlertCardProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1, duration: 0.3 }}
-            className={`rounded-xl border ${config.border} ${config.bg} p-4`}
+            className={`rounded-2xl border ${config.border} ${config.bg} p-4`}
           >
             <div className="flex items-start gap-3">
               <div className={`w-8 h-8 rounded-lg ${config.iconBg} flex items-center justify-center flex-shrink-0`}>
@@ -145,7 +145,8 @@ export function AlertCard({ alerts, title, onAction }: AlertCardProps) {
               </div>
               <button
                 onClick={() => handleAction(alert)}
-                className={`px-3 py-1 ${config.btnBg} text-white text-[11px] font-bold rounded-lg flex-shrink-0 transition-colors`}
+                aria-label={`${alert.actionLabel} ${alert.subscriptionName}`}
+                className={`px-3 py-1.5 ${config.btnBg} text-white text-[11px] font-bold rounded-lg flex-shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-current cursor-pointer`}
               >
                 {alert.actionLabel}
               </button>
