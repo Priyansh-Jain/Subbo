@@ -17,6 +17,7 @@ interface TamboContextBridgeProps {
   potentialSavings: number;
   subscriptionCount: number;
   trialsEndingCount: number;
+  subscriptions: Subscription[];
 }
 
 export function TamboContextBridge({
@@ -26,6 +27,7 @@ export function TamboContextBridge({
   potentialSavings,
   subscriptionCount,
   trialsEndingCount,
+  subscriptions,
 }: TamboContextBridgeProps) {
   const { addContextHelper, removeContextHelper } = useTamboContextHelpers();
 
@@ -33,6 +35,14 @@ export function TamboContextBridge({
     addContextHelper('uiState', () => ({
       activeFilter,
       selectedSubscription,
+      subscriptions: subscriptions.map(s => ({
+        id: s.id,
+        name: s.name,
+        cost: s.cost,
+        status: s.status,
+        category: s.category,
+        logo: s.logo,
+      })),
       totals: {
         totalSpending,
         potentialSavings,
@@ -48,6 +58,7 @@ export function TamboContextBridge({
     potentialSavings,
     subscriptionCount,
     trialsEndingCount,
+    subscriptions,
     addContextHelper,
     removeContextHelper,
   ]);

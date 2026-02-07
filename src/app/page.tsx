@@ -1,704 +1,675 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { motion, useInView, useScroll, useTransform } from 'framer-motion';
+import Link from 'next/link';
 import {
-  differenceInDays,
-  format,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-} from 'date-fns';
-import {
-  Check,
-  Home as HomeIcon,
-  LayoutGrid,
-  List,
-  MessageSquare,
-  Moon,
-  MonitorPlay,
-  Music,
-  Search,
+  ArrowRight,
+  Bot,
+  Shield,
+  Zap,
+  TrendingDown,
+  CreditCard,
+  Eye,
   Sparkles,
-  Sun,
+  CheckCircle2,
+  LineChart,
 } from 'lucide-react';
-import { TamboChat } from '@/components/TamboChat';
-import { TamboContextBridge } from '@/components/TamboContextBridge';
-import { SubscriptionDetailView } from '@/components/SubscriptionDetailView';
-import { ReviewSubscriptionsView } from '@/components/ReviewSubscriptionsView';
-import { SpendingCalendar } from '@/components/SpendingCalendar';
-import { SpendingAnalytics } from '@/components/SpendingAnalytics';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { SubscriptionActionsProvider } from '@/contexts/SubscriptionContext';
-import type { Subscription } from '@/lib/types';
 
-type FilterType = 'all' | 'active' | 'zombie' | 'renewal' | 'trialing';
+/* ─── Animation Variants ──────────────────────────────────────── */
 
-const tabs = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'expenses', label: 'Expenses' },
-] as const;
-
-type TabId = (typeof tabs)[number]['id'];
-
-const CATEGORY_DOT_COLORS: Record<string, string> = {
-  Entertainment: 'bg-blue-400',
-  Music: 'bg-green-400',
-  Productivity: 'bg-purple-400',
-  'AI Tools': 'bg-emerald-400',
-  Software: 'bg-indigo-400',
-  Fitness: 'bg-orange-400',
-  Professional: 'bg-sky-400',
-  Design: 'bg-pink-400',
-  Cloud: 'bg-cyan-400',
-  Storage: 'bg-slate-400',
-  Health: 'bg-teal-400',
-  Developer: 'bg-violet-400',
-  Security: 'bg-amber-400',
-  Education: 'bg-lime-400',
-  Shopping: 'bg-rose-400',
+const fadeInUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.25, 0.4, 0.25, 1] as const } },
 };
 
-type MobilePanel = 'sidebar' | 'main' | 'chat';
+const stagger = {
+  visible: { transition: { staggerChildren: 0.08 } },
+};
 
-export default function Home() {
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const stored = localStorage.getItem('subtrack-subscriptions');
-      return stored ? JSON.parse(stored) : [];
-    } catch { return []; }
-  });
-  const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
-  const [pendingReviewSubs, setPendingReviewSubs] = useState<Subscription[]>([]);
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>('main');
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      const stored = localStorage.getItem('subtrack-dark-mode');
-      if (stored !== null) return stored === 'true';
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    } catch { return false; }
-  });
-  const hasTambo = Boolean(process.env.NEXT_PUBLIC_TAMBO_API_KEY);
+const scaleIn = {
+  hidden: { opacity: 0, scale: 0.95 },
+  visible: { opacity: 1, scale: 1, transition: { duration: 0.6, ease: [0.25, 0.4, 0.25, 1] as const } },
+};
 
-  // Toggle dark class on document
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    try { localStorage.setItem('subtrack-dark-mode', String(darkMode)); } catch { /* quota */ }
-  }, [darkMode]);
+/* ─── Bento Card with Mouse-Follow Effect ─────────────────────── */
 
-  const toggleDarkMode = useCallback(() => setDarkMode(prev => !prev), []);
+function BentoCard({
+  children,
+  className = '',
+  span = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+  span?: string;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
 
-  // Persist to localStorage on change (with error handling)
-  useEffect(() => {
-    if (subscriptions.length > 0) {
-      try {
-        localStorage.setItem('subtrack-subscriptions', JSON.stringify(subscriptions));
-      } catch (e) {
-        console.warn('Failed to save subscriptions to localStorage:', e);
-      }
-    }
-  }, [subscriptions]);
-
-  const handleDetectedSubscriptions = (subs: Subscription[]) => {
-    setPendingReviewSubs(prev => {
-      const existingIds = new Set(prev.map(s => s.id));
-      const newSubs = subs.filter(s => !existingIds.has(s.id));
-      return [...prev, ...newSubs];
-    });
-  };
-
-  const addSubscription = (sub: Subscription) => {
-    setSubscriptions(prev => {
-      if (prev.some(s => s.name.toLowerCase() === sub.name.toLowerCase())) return prev;
-      return [...prev, sub];
-    });
-  };
-
-  const addMultipleSubscriptions = (subs: Subscription[]) => {
-    setSubscriptions(prev => {
-      const newSubs = subs.filter(sub => !prev.some(s => s.name.toLowerCase() === sub.name.toLowerCase()));
-      return [...prev, ...newSubs];
-    });
-  };
-
-  const removeSubscription = (id: string) => {
-    setSubscriptions(prev => prev.filter(s => s.id !== id));
-  };
-
-  const updateSubscription = (id: string, updates: Partial<Subscription>) => {
-    setSubscriptions(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
-  };
-
-  const filteredSubscriptions = useMemo(() => {
-    return subscriptions.filter((sub) => {
-      const matchesSearch = sub.name.toLowerCase().includes(searchQuery.toLowerCase());
-      if (!matchesSearch) return false;
-      if (activeFilter === 'all') return true;
-      if (activeFilter === 'active') return sub.status === 'active';
-      if (activeFilter === 'zombie') return sub.status === 'zombie';
-      if (activeFilter === 'renewal')
-        return sub.status === 'price_hike' || (sub.trialEndsIn !== undefined && sub.trialEndsIn < 7);
-      if (activeFilter === 'trialing') return sub.status === 'trial_ending';
-      return true;
-    });
-  }, [subscriptions, activeFilter, searchQuery]);
-
-  const selectedSubscription = useMemo(() => {
-    return subscriptions.find((s) => s.id === selectedSubscriptionId) || null;
-  }, [subscriptions, selectedSubscriptionId]);
-
-  const totalSpending = useMemo(
-    () => subscriptions.reduce((total, sub) => total + sub.cost, 0),
-    [subscriptions]
-  );
-  const potentialSavings = useMemo(
-    () => subscriptions.filter((sub) => sub.status === 'zombie').reduce((total, sub) => total + sub.cost, 0),
-    [subscriptions]
-  );
-  const trialsEndingCount = useMemo(
-    () => subscriptions.filter((sub) => sub.status === 'trial_ending').length,
-    [subscriptions]
-  );
-
-  // Sidebar computed values
-  const activeCount = useMemo(() => subscriptions.filter(s => s.status === 'active').length, [subscriptions]);
-  const renewalCount = useMemo(
-    () => subscriptions.filter(s => s.status === 'price_hike' || (s.trialEndsIn !== undefined && s.trialEndsIn < 7)).length,
-    [subscriptions]
-  );
-  const trialingCount = useMemo(() => subscriptions.filter(s => s.status === 'trial_ending').length, [subscriptions]);
-  const uniqueCategories = useMemo(() => [...new Set(subscriptions.map(s => s.category))], [subscriptions]);
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden">
-      {/* Header */}
-      <header className="h-12 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between px-4 sticky top-0 z-50">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">S</div>
-          <h1 className="font-semibold text-base leading-tight text-slate-900 dark:text-white">
-            SubTrack <sup className="text-[10px] font-bold text-emerald-600 ml-0.5">AI</sup>
-          </h1>
-        </div>
+    <motion.div
+      ref={cardRef}
+      variants={fadeInUp}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={`relative overflow-hidden bg-white border border-zinc-200 rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] shadow-[0_2px_8px_rgba(0,0,0,0.04)] ${span} ${className}`}
+    >
+      {/* Mouse-follow radial gradient */}
+      <div
+        className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+        style={{
+          opacity: isHovered ? 1 : 0,
+          background: `radial-gradient(400px circle at ${mousePos.x}px ${mousePos.y}px, rgba(0,0,0,0.03), transparent 40%)`,
+        }}
+      />
+      <div className="relative z-10">{children}</div>
+    </motion.div>
+  );
+}
 
-        <nav className="hidden md:flex items-center gap-1 bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                className={`px-3.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  isActive
-                    ? 'bg-white dark:bg-slate-600 shadow-sm text-slate-900 dark:text-white'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
+/* ─── Mini Chart (SVG) ─────────────────────────────────────────── */
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleDarkMode}
-            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+function MiniChart() {
+  return (
+    <svg viewBox="0 0 240 80" className="w-full h-20 mt-4" fill="none">
+      <defs>
+        <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgb(99,102,241)" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="rgb(99,102,241)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {/* Grid lines */}
+      {[20, 40, 60].map(y => (
+        <line key={y} x1="0" y1={y} x2="240" y2={y} stroke="#e4e4e7" strokeWidth="0.5" strokeDasharray="4 4" />
+      ))}
+      {/* Area fill */}
+      <motion.path
+        d="M0,65 C20,60 40,55 60,48 C80,41 100,50 120,38 C140,26 160,30 180,22 C200,14 220,18 240,8 L240,80 L0,80 Z"
+        fill="url(#chartFill)"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.5, duration: 1 }}
+      />
+      {/* Line */}
+      <motion.path
+        d="M0,65 C20,60 40,55 60,48 C80,41 100,50 120,38 C140,26 160,30 180,22 C200,14 220,18 240,8"
+        stroke="rgb(99,102,241)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        initial={{ pathLength: 0 }}
+        animate={{ pathLength: 1 }}
+        transition={{ delay: 0.3, duration: 1.2, ease: 'easeOut' }}
+      />
+      {/* Dot at end */}
+      <motion.circle
+        cx="240"
+        cy="8"
+        r="3"
+        fill="rgb(99,102,241)"
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        transition={{ delay: 1.4, duration: 0.3 }}
+      />
+    </svg>
+  );
+}
+
+/* ─── Subscription Stack Icons ────────────────────────────────── */
+
+const SERVICES = [
+  { name: 'Netflix', color: '#E50914', letter: 'N', cost: '$15.99' },
+  { name: 'Spotify', color: '#1DB954', letter: 'S', cost: '$10.99' },
+  { name: 'Adobe CC', color: '#FF0000', letter: 'A', cost: '$59.99' },
+  { name: 'ChatGPT', color: '#10B981', letter: 'G', cost: '$20.00' },
+  { name: 'Figma', color: '#A259FF', letter: 'F', cost: '$15.00' },
+  { name: 'Notion', color: '#000000', letter: 'N', cost: '$10.00' },
+];
+
+function SubscriptionStack() {
+  return (
+    <div className="space-y-2.5 mt-4">
+      {SERVICES.map((svc, i) => (
+        <motion.div
+          key={svc.name}
+          initial={{ opacity: 0, x: -12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3 + i * 0.08, duration: 0.4 }}
+          className="flex items-center gap-3 p-2 rounded-xl hover:bg-zinc-50 transition-colors"
+        >
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold shadow-sm"
+            style={{ backgroundColor: svc.color }}
           >
-            {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
-          <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[10px] font-bold">JD</div>
+            {svc.letter}
+          </div>
+          <span className="text-sm font-medium text-zinc-700 flex-1">{svc.name}</span>
+          <span className="text-xs text-zinc-400">{svc.cost}</span>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Floating App Mockup (Hero) ──────────────────────────────── */
+
+function FloatingMockup() {
+  return (
+    <motion.div
+      variants={scaleIn}
+      className="relative w-full max-w-4xl mx-auto mt-16"
+    >
+      {/* Heavy soft shadow */}
+      <div className="absolute inset-0 bg-black/5 rounded-3xl blur-3xl translate-y-8 scale-[0.95]" />
+
+      {/* Window */}
+      <div className="relative bg-white border border-zinc-200 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.1)] overflow-hidden">
+        {/* Title bar */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-400" />
+            <div className="w-3 h-3 rounded-full bg-amber-400" />
+            <div className="w-3 h-3 rounded-full bg-green-400" />
+          </div>
+          <div className="flex-1 text-center">
+            <span className="text-[11px] text-zinc-400 font-medium">SubTrack AI — Dashboard</span>
+          </div>
+          <div className="w-12" />
         </div>
-      </header>
 
-      {hasTambo && (
-        <TamboContextBridge
-          activeFilter={activeFilter}
-          selectedSubscription={selectedSubscription}
-          totalSpending={totalSpending}
-          potentialSavings={potentialSavings}
-          subscriptionCount={subscriptions.length}
-          trialsEndingCount={trialsEndingCount}
-        />
-      )}
-
-      {/* Main 3-panel layout */}
-      <SubscriptionActionsProvider actions={{ addSubscription, addMultipleSubscriptions, removeSubscription, updateSubscription }}>
-      <main className="flex-1 flex overflow-hidden h-[calc(100vh-48px)] lg:h-[calc(100vh-48px)] pb-14 lg:pb-0">
-        {/* Left Sidebar */}
-        <aside className={`w-full lg:w-64 border-r border-slate-200 dark:border-slate-700 flex-col bg-white dark:bg-slate-800 flex-shrink-0 ${mobilePanel === 'sidebar' ? 'flex' : 'hidden lg:flex'}`}>
-          {/* Search */}
-          <div className="p-3">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-4 h-4" />
-              <input
-                aria-label="Search subscriptions"
-                className="w-full pl-9 pr-3 py-1.5 bg-slate-100 dark:bg-slate-700 border-0 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-1 focus:ring-emerald-500"
-                placeholder="Search..."
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+        {/* App content mockup */}
+        <div className="flex h-[340px]">
+          {/* Sidebar */}
+          <div className="w-48 border-r border-zinc-100 p-3 space-y-1.5 hidden sm:block">
+            <div className="px-2 py-1">
+              <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Subscriptions</p>
             </div>
-          </div>
-
-          {/* Status Filters */}
-          <div className="px-3 pb-3">
-            <p className="px-2 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">Status</p>
-            <div className="space-y-0.5">
-              <SidebarFilterButton label="Active" count={activeCount} isActive={activeFilter === 'active'} onClick={() => setActiveFilter(activeFilter === 'active' ? 'all' : 'active')} />
-              <SidebarFilterButton label="Renewal Soon" count={renewalCount} isActive={activeFilter === 'renewal'} onClick={() => setActiveFilter(activeFilter === 'renewal' ? 'all' : 'renewal')} />
-              <SidebarFilterButton label="Trialing" count={trialingCount} isActive={activeFilter === 'trialing'} onClick={() => setActiveFilter(activeFilter === 'trialing' ? 'all' : 'trialing')} />
-            </div>
-          </div>
-
-          {/* Categories */}
-          {uniqueCategories.length > 0 && (
-            <div className="px-3 pb-3">
-              <p className="px-2 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">Categories</p>
-              <div className="space-y-0.5">
-                {uniqueCategories.map(cat => (
-                  <button key={cat} aria-label={`Filter by ${cat}`} className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                    <span className={`w-2 h-2 rounded-full ${CATEGORY_DOT_COLORS[cat] || 'bg-slate-300'}`} />
-                    <span>{cat}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Activity */}
-          {pendingReviewSubs.length > 0 && (
-            <div className="px-3 pb-3">
-              <p className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Activity</p>
-              <div className="space-y-0.5">
-                <button className="w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700">
-                  <span>Reviewing</span>
-                  <span className="text-[10px] text-white bg-emerald-600 rounded-full px-1.5 py-0.5 font-bold">{pendingReviewSubs.length}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Subscription List */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-3 space-y-0.5">
-            {filteredSubscriptions.length === 0 && subscriptions.length === 0 && (
-              <p className="text-xs text-slate-400 dark:text-slate-500 px-3 pt-2">No subscriptions yet.</p>
-            )}
-            {filteredSubscriptions.length === 0 && subscriptions.length > 0 && (
-              <p className="text-xs text-slate-400 dark:text-slate-500 px-3 pt-2">No results match this filter.</p>
-            )}
-            {filteredSubscriptions.map((sub) => (
-              <SubscriptionCard
-                key={sub.id}
-                subscription={sub}
-                isSelected={selectedSubscriptionId === sub.id}
-                onSelect={() => setSelectedSubscriptionId(sub.id)}
-              />
-            ))}
-          </div>
-        </aside>
-
-        {/* Center Panel */}
-        <section className={`flex-1 overflow-hidden flex-col bg-slate-50 dark:bg-slate-900 ${mobilePanel === 'main' ? 'flex' : 'hidden lg:flex'}`}>
-          <ErrorBoundary>
-          {pendingReviewSubs.length > 0 ? (
-            <ReviewSubscriptionsView
-              subscriptions={pendingReviewSubs}
-              onConfirm={(approved) => {
-                addMultipleSubscriptions(approved);
-                setPendingReviewSubs([]);
-              }}
-              onBack={() => setPendingReviewSubs([])}
-            />
-          ) : activeTab === 'schedule' ? (
-            <ScheduleTabView subscriptions={subscriptions} />
-          ) : activeTab === 'expenses' ? (
-            <ExpensesTabView subscriptions={subscriptions} />
-          ) : selectedSubscription ? (
-            <SubscriptionDetailView
-              subscription={selectedSubscription}
-              onBack={() => setSelectedSubscriptionId(null)}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center px-8">
-              <div className="w-16 h-16 mb-6 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm flex items-center justify-center relative">
-                <LayoutGrid className="w-7 h-7 text-slate-300 dark:text-slate-600" />
-                <div className="absolute -right-1.5 -bottom-1.5 w-6 h-6 bg-emerald-500 text-white rounded-full flex items-center justify-center">
-                  <Sparkles className="w-3 h-3" />
+            {[
+              { name: 'Netflix', cost: '$15.99', color: '#E50914' },
+              { name: 'Spotify', cost: '$10.99', color: '#1DB954' },
+              { name: 'ChatGPT', cost: '$20.00', color: '#10B981' },
+              { name: 'Adobe CC', cost: '$59.99', color: '#FF0000' },
+              { name: 'Notion', cost: '$10.00', color: '#000' },
+            ].map((s, i) => (
+              <div key={s.name} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs ${i === 0 ? 'bg-emerald-50 border border-emerald-200' : ''}`}>
+                <div className="w-6 h-6 rounded-md flex items-center justify-center text-white text-[9px] font-bold" style={{ backgroundColor: s.color }}>
+                  {s.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-medium text-zinc-800 truncate">{s.name}</p>
+                  <p className="text-[9px] text-zinc-400">{s.cost}/mo</p>
                 </div>
               </div>
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Start your tracking journey</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm leading-relaxed">
-                Your subscription list is empty. Use the AI assistant on the right to add them — just describe what you have or paste a list.
-              </p>
+            ))}
+          </div>
+
+          {/* Center */}
+          <div className="flex-1 p-4 bg-zinc-50/30">
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {[
+                { label: 'Monthly', value: '$116.97', delta: '-3.2%' },
+                { label: 'Active', value: '5', delta: '' },
+                { label: 'Savings', value: '$59.99', delta: 'possible' },
+              ].map(m => (
+                <div key={m.label} className="bg-white rounded-xl border border-zinc-100 p-2.5">
+                  <p className="text-[8px] text-zinc-400 font-medium uppercase">{m.label}</p>
+                  <p className="text-base font-bold text-zinc-900 mt-0.5">{m.value}</p>
+                  {m.delta && <p className="text-[8px] text-emerald-600 font-medium">{m.delta}</p>}
+                </div>
+              ))}
             </div>
-          )}
-          </ErrorBoundary>
-        </section>
+            <div className="bg-white rounded-xl border border-zinc-100 p-3 h-32">
+              <p className="text-[9px] font-bold text-zinc-400 uppercase mb-1">Spending Trend</p>
+              <svg viewBox="0 0 300 60" className="w-full h-16" fill="none">
+                <path d="M0,50 C40,45 60,35 100,30 C140,25 180,40 220,20 C260,5 280,15 300,10" stroke="#6366f1" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M0,50 C40,45 60,35 100,30 C140,25 180,40 220,20 C260,5 280,15 300,10 L300,60 L0,60Z" fill="url(#mockGrad)" />
+                <defs>
+                  <linearGradient id="mockGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.08" />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+          </div>
 
-        {/* Chat Panel */}
-        <div className={`w-full lg:w-[360px] flex-shrink-0 h-full ${mobilePanel === 'chat' ? 'block' : 'hidden lg:block'}`}>
-          <ErrorBoundary>
-            <TamboChat
-              selectedSubscription={selectedSubscription}
-              potentialSavings={potentialSavings}
-              subscriptions={subscriptions}
-              onAddSubscription={addSubscription}
-              onAddMultipleSubscriptions={addMultipleSubscriptions}
-              onDetectedSubscriptions={handleDetectedSubscriptions}
-            />
-          </ErrorBoundary>
+          {/* Chat panel (light theme) */}
+          <div className="w-56 bg-white border-l border-zinc-100 flex flex-col hidden md:flex">
+            <div className="px-3 py-2.5 border-b border-zinc-100 flex items-center gap-2">
+              <div className="w-5 h-5 rounded-md bg-emerald-50 flex items-center justify-center">
+                <Bot className="w-3 h-3 text-emerald-600" />
+              </div>
+              <span className="text-[10px] font-semibold text-zinc-700">Tambo AI</span>
+              <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            </div>
+            <div className="flex-1 p-3 space-y-2 overflow-hidden">
+              <div className="bg-zinc-100 rounded-lg rounded-tl-none px-2.5 py-1.5 max-w-[90%]">
+                <p className="text-[10px] text-zinc-600 leading-relaxed">I found <strong className="text-zinc-900">3 zombie subscriptions</strong> draining $84.97/mo.</p>
+              </div>
+              <div className="bg-zinc-100 rounded-lg rounded-tl-none px-2.5 py-1.5 max-w-[90%]">
+                <p className="text-[10px] text-zinc-600 leading-relaxed">Adobe CC hasn&apos;t been opened in <strong className="text-amber-600">4 months</strong>.</p>
+              </div>
+              <div className="ml-auto bg-emerald-600 rounded-lg rounded-tr-none px-2.5 py-1.5 max-w-[80%]">
+                <p className="text-[10px] text-white">Cancel Adobe for me</p>
+              </div>
+              <div className="bg-zinc-100 rounded-lg rounded-tl-none px-2.5 py-1.5 max-w-[90%]">
+                <p className="text-[10px] text-zinc-600 leading-relaxed">Cancellation staged. Confirm to save <strong className="text-emerald-600">$59.99/mo</strong>.</p>
+              </div>
+            </div>
+          </div>
         </div>
-      </main>
+      </div>
+    </motion.div>
+  );
+}
 
-      {/* Mobile Bottom Nav */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-14 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex items-center justify-around z-50" aria-label="Mobile navigation">
-        <button
-          onClick={() => setMobilePanel('sidebar')}
-          aria-label="Subscriptions list"
-          className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-lg transition-colors ${mobilePanel === 'sidebar' ? 'text-emerald-600' : 'text-slate-400 dark:text-slate-500'}`}
-        >
-          <List className="w-5 h-5" />
-          <span className="text-[10px] font-medium">Subs</span>
-        </button>
-        <button
-          onClick={() => setMobilePanel('main')}
-          aria-label="Dashboard"
-          className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-lg transition-colors ${mobilePanel === 'main' ? 'text-emerald-600' : 'text-slate-400 dark:text-slate-500'}`}
-        >
-          <HomeIcon className="w-5 h-5" />
-          <span className="text-[10px] font-medium">Home</span>
-        </button>
-        <button
-          onClick={() => setMobilePanel('chat')}
-          aria-label="AI Chat assistant"
-          className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-lg transition-colors ${mobilePanel === 'chat' ? 'text-emerald-600' : 'text-slate-400 dark:text-slate-500'}`}
-        >
-          <MessageSquare className="w-5 h-5" />
-          <span className="text-[10px] font-medium">AI Chat</span>
-        </button>
+/* ─── How It Works Step ───────────────────────────────────────── */
+
+function TimelineStep({
+  step,
+  title,
+  description,
+  icon: Icon,
+  isLast = false,
+}: {
+  step: number;
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  isLast?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { once: true, margin: '-100px' });
+
+  return (
+    <motion.div
+      ref={ref}
+      className="flex gap-6"
+      initial="hidden"
+      animate={isInView ? 'visible' : 'hidden'}
+      variants={fadeInUp}
+    >
+      {/* Timeline line + dot */}
+      <div className="flex flex-col items-center">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border-2 transition-colors duration-500 ${isInView ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-zinc-300 text-zinc-400'}`}>
+          <Icon className="w-4 h-4" />
+        </div>
+        {!isLast && (
+          <div className={`w-px flex-1 mt-2 border-l-2 border-dashed transition-colors duration-700 ${isInView ? 'border-indigo-300' : 'border-zinc-200'}`} />
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="pb-12">
+        <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mb-1">Step {step}</p>
+        <h3 className="text-lg font-semibold text-zinc-900 tracking-tight">{title}</h3>
+        <p className="text-sm text-zinc-500 mt-1 leading-relaxed max-w-md">{description}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LANDING PAGE
+   ═══════════════════════════════════════════════════════════════ */
+
+export default function LandingPage() {
+  const heroRef = useRef<HTMLDivElement>(null);
+  const bentoRef = useRef<HTMLDivElement>(null);
+  const bentoInView = useInView(bentoRef, { once: true, margin: '-60px' });
+  const { scrollYProgress } = useScroll();
+  const navBg = useTransform(scrollYProgress, [0, 0.05], [0, 1]);
+  const [navOpacity, setNavOpacity] = useState(0);
+
+  useEffect(() => {
+    const unsub = navBg.on('change', (v) => setNavOpacity(v));
+    return unsub;
+  }, [navBg]);
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* ─── Navbar ────────────────────────────────────────────── */}
+      <nav
+        className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
+        style={{
+          backgroundColor: `rgba(255,255,255,${navOpacity * 0.7})`,
+          backdropFilter: navOpacity > 0.1 ? 'blur(16px) saturate(180%)' : 'none',
+          borderBottom: navOpacity > 0.3 ? '1px solid rgba(228,228,231,0.6)' : '1px solid transparent',
+        }}
+      >
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center text-white font-bold text-sm">S</div>
+            <span className="font-semibold text-zinc-900 text-base tracking-tight">
+              SubTrack <sup className="text-[9px] font-bold text-indigo-600 ml-0.5">AI</sup>
+            </span>
+          </div>
+
+          <div className="hidden md:flex items-center gap-8">
+            <a href="#features" className="text-sm text-zinc-500 hover:text-zinc-900 transition-colors">Features</a>
+            <a href="#how-it-works" className="text-sm text-zinc-500 hover:text-zinc-900 transition-colors">How it Works</a>
+          </div>
+
+          <Link
+            href="/dashboard"
+            className="px-4 py-2 bg-zinc-900 text-white text-sm font-medium rounded-lg hover:bg-zinc-800 transition-colors shadow-sm"
+          >
+            Launch App
+          </Link>
+        </div>
       </nav>
 
-      </SubscriptionActionsProvider>
-    </div>
-  );
-}
-
-/* ─── Tab Views ─────────────────────────────────────────────────── */
-
-const ANALYTICS_CATEGORY_COLORS: Record<string, string> = {
-  Entertainment: '#3b82f6',
-  Music: '#22c55e',
-  Productivity: '#a855f7',
-  'AI Tools': '#10b981',
-  Software: '#6366f1',
-  Fitness: '#f97316',
-  Professional: '#0ea5e9',
-  Design: '#ec4899',
-  Cloud: '#06b6d4',
-  Health: '#14b8a6',
-  Storage: '#94a3b8',
-  Developer: '#8b5cf6',
-  Security: '#f59e0b',
-  Education: '#84cc16',
-  Shopping: '#f43f5e',
-};
-
-function ScheduleTabView({ subscriptions }: { subscriptions: Subscription[] }) {
-  const calendarData = useMemo(() => {
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
-    const allDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
-
-    const daysMap: Record<string, { subscriptions: Array<{ name: string; cost: number; status: string; logo: string }>; totalCost: number }> = {};
-
-    for (const sub of subscriptions) {
-      if (!sub.renewalDate) continue;
-      const renewal = new Date(sub.renewalDate);
-      if (renewal.getMonth() === now.getMonth() && renewal.getFullYear() === now.getFullYear()) {
-        const dateKey = format(renewal, 'yyyy-MM-dd');
-        if (!daysMap[dateKey]) {
-          daysMap[dateKey] = { subscriptions: [], totalCost: 0 };
-        }
-        daysMap[dateKey].subscriptions.push({
-          name: sub.name,
-          cost: sub.cost,
-          status: sub.status,
-          logo: sub.logo,
-        });
-        daysMap[dateKey].totalCost += sub.cost;
-      }
-    }
-
-    // Also distribute subs without renewal dates across the month
-    const noDateSubs = subscriptions.filter(s => !s.renewalDate);
-    if (noDateSubs.length > 0 && allDays.length > 0) {
-      for (let i = 0; i < noDateSubs.length; i++) {
-        const sub = noDateSubs[i];
-        const day = allDays[Math.floor((i / noDateSubs.length) * allDays.length)];
-        const dateKey = format(day, 'yyyy-MM-dd');
-        if (!daysMap[dateKey]) {
-          daysMap[dateKey] = { subscriptions: [], totalCost: 0 };
-        }
-        daysMap[dateKey].subscriptions.push({
-          name: sub.name,
-          cost: sub.cost,
-          status: sub.status,
-          logo: sub.logo,
-        });
-        daysMap[dateKey].totalCost += sub.cost;
-      }
-    }
-
-    const days = Object.entries(daysMap).map(([date, data]) => ({
-      date,
-      subscriptions: data.subscriptions,
-      totalCost: Math.round(data.totalCost * 100) / 100,
-    }));
-
-    const monthlyTotal = subscriptions.reduce((sum, s) => sum + s.cost, 0);
-
-    return {
-      month: now.getMonth(),
-      year: now.getFullYear(),
-      days,
-      monthlyTotal: Math.round(monthlyTotal * 100) / 100,
-      comparedToLastMonth: -3.2,
-    };
-  }, [subscriptions]);
-
-  if (subscriptions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center px-8">
-        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">No subscriptions to show</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Add subscriptions to see your renewal calendar.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-2xl mx-auto">
-        <SpendingCalendar
-          month={calendarData.month}
-          year={calendarData.year}
-          days={calendarData.days}
-          monthlyTotal={calendarData.monthlyTotal}
-          comparedToLastMonth={calendarData.comparedToLastMonth}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ExpensesTabView({ subscriptions }: { subscriptions: Subscription[] }) {
-  const analyticsData = useMemo(() => {
-    const totalMonthly = subscriptions.reduce((sum, s) => sum + s.cost, 0);
-
-    const categoryMap: Record<string, number> = {};
-    for (const sub of subscriptions) {
-      categoryMap[sub.category] = (categoryMap[sub.category] || 0) + sub.cost;
-    }
-    const categories = Object.entries(categoryMap)
-      .map(([category, amount]) => ({
-        category,
-        amount: Math.round(amount * 100) / 100,
-        color: ANALYTICS_CATEGORY_COLORS[category] || '#94a3b8',
-        percentage: totalMonthly > 0 ? Math.round((amount / totalMonthly) * 100) : 0,
-      }))
-      .sort((a, b) => b.amount - a.amount);
-
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const now = new Date();
-    const monthlyTrends = Array.from({ length: 6 }, (_, i) => {
-      const monthIndex = (now.getMonth() - 5 + i + 12) % 12;
-      const variance = (Math.sin(i * 1.5) * 20) + (i * 3);
-      return {
-        month: monthNames[monthIndex],
-        amount: Math.round((totalMonthly + variance) * 100) / 100,
-      };
-    });
-
-    const topSubscriptions = [...subscriptions]
-      .sort((a, b) => b.cost - a.cost)
-      .slice(0, 3)
-      .map(s => ({
-        name: s.name,
-        cost: s.cost,
-        logo: s.logo,
-        percentage: totalMonthly > 0 ? Math.round((s.cost / totalMonthly) * 100) : 0,
-      }));
-
-    return {
-      categories,
-      monthlyTrends,
-      topSubscriptions,
-      totalMonthly: Math.round(totalMonthly * 100) / 100,
-      monthOverMonthChange: -3.2,
-    };
-  }, [subscriptions]);
-
-  if (subscriptions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center px-8">
-        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">No expenses to analyze</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Add subscriptions to see your spending analytics.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-2xl mx-auto">
-        <SpendingAnalytics
-          categories={analyticsData.categories}
-          monthlyTrends={analyticsData.monthlyTrends}
-          topSubscriptions={analyticsData.topSubscriptions}
-          totalMonthly={analyticsData.totalMonthly}
-          monthOverMonthChange={analyticsData.monthOverMonthChange}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ─── Sidebar Components ────────────────────────────────────────── */
-
-function SidebarFilterButton({
-  label,
-  count,
-  isActive,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  isActive: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
-        isActive
-          ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
-      }`}
-    >
-      <span>{label}</span>
-      <span className={`text-[10px] ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}>{count}</span>
-    </button>
-  );
-}
-
-/* ─── Subscription Card ─────────────────────────────────────────── */
-
-function SubscriptionCard({
-  subscription,
-  isSelected,
-  onSelect,
-}: {
-  subscription: Subscription;
-  isSelected: boolean;
-  onSelect: () => void;
-}) {
-  const { icon, bg } = getSubscriptionIcon(subscription.name);
-
-  return (
-    <button
-      onClick={onSelect}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
-        isSelected
-          ? 'bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800'
-          : 'hover:bg-slate-50 dark:hover:bg-slate-700 border border-transparent'
-      }`}
-    >
-      <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center text-white flex-shrink-0`}>
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">{subscription.name}</p>
-        <div className="flex items-center gap-1.5">
-          <p className="text-[10px] text-slate-500 dark:text-slate-400">${subscription.cost.toFixed(2)}/mo</p>
-          <RenewalBadge subscription={subscription} />
+      {/* ─── Hero ──────────────────────────────────────────────── */}
+      <section ref={heroRef} className="relative pt-32 pb-8 overflow-hidden">
+        {/* Mesh gradient background */}
+        <div className="absolute inset-0 pointer-events-none" aria-hidden>
+          <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-indigo-100/40 rounded-full blur-3xl" />
+          <div className="absolute top-20 right-1/4 w-[500px] h-[500px] bg-rose-100/30 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full h-40 bg-gradient-to-t from-white to-transparent" />
         </div>
-      </div>
-      {isSelected && <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />}
-    </button>
+
+        <div className="relative max-w-6xl mx-auto px-6">
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={stagger}
+            className="text-center max-w-3xl mx-auto"
+          >
+            {/* Badge */}
+            <motion.div variants={fadeInUp} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-200 bg-white/70 backdrop-blur-sm shadow-[0_2px_8px_rgba(0,0,0,0.04)] mb-8">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="text-xs font-medium text-zinc-600">Powered by Tambo AI</span>
+            </motion.div>
+
+            {/* Headline */}
+            <motion.h1
+              variants={fadeInUp}
+              className="text-5xl sm:text-6xl lg:text-7xl font-bold text-zinc-900 leading-[1.08] tracking-[-0.02em]"
+            >
+              The First Autonomous Agent for your{' '}
+              <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Finances</span>
+            </motion.h1>
+
+            {/* Sub-headline */}
+            <motion.p
+              variants={fadeInUp}
+              className="mt-6 text-lg text-zinc-500 leading-relaxed max-w-xl mx-auto"
+            >
+              SubTrack finds hidden subscriptions, kills zombie services, and navigates cancellation dark patterns — so you don&apos;t have to.
+            </motion.p>
+
+            {/* CTAs */}
+            <motion.div variants={fadeInUp} className="mt-8 flex items-center justify-center gap-4">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white text-sm font-semibold rounded-xl hover:bg-zinc-800 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.15)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.2)]"
+              >
+                Get Started Free
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <a
+                href="#features"
+                className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-zinc-600 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+              >
+                See Features
+              </a>
+            </motion.div>
+          </motion.div>
+
+          {/* Floating App Mockup */}
+          <motion.div initial="hidden" animate="visible" variants={stagger}>
+            <FloatingMockup />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ─── Stats Bar ─────────────────────────────────────────── */}
+      <section className="py-12 border-y border-zinc-100 bg-zinc-50/50">
+        <div className="max-w-4xl mx-auto px-6">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={stagger}
+            className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center"
+          >
+            {[
+              { value: '$2.4M+', label: 'Saved by users' },
+              { value: '10K+', label: 'Zombies killed' },
+              { value: '340+', label: 'Services tracked' },
+              { value: '<2min', label: 'Avg. cancel time' },
+            ].map(stat => (
+              <motion.div key={stat.label} variants={fadeInUp}>
+                <p className="text-2xl font-bold text-zinc-900 tracking-tight">{stat.value}</p>
+                <p className="text-xs text-zinc-500 mt-1 font-medium">{stat.label}</p>
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ─── Bento Grid ────────────────────────────────────────── */}
+      <section id="features" className="py-24 bg-white">
+        <div className="max-w-6xl mx-auto px-6">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={stagger}
+            className="text-center mb-16"
+          >
+            <motion.p variants={fadeInUp} className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-3">Features</motion.p>
+            <motion.h2 variants={fadeInUp} className="text-3xl sm:text-4xl font-bold text-zinc-900 tracking-[-0.02em]">
+              Everything you need to take control
+            </motion.h2>
+            <motion.p variants={fadeInUp} className="mt-4 text-zinc-500 max-w-lg mx-auto">
+              An AI-powered command center for every subscription in your life.
+            </motion.p>
+          </motion.div>
+
+          <motion.div
+            ref={bentoRef}
+            initial="hidden"
+            animate={bentoInView ? 'visible' : 'hidden'}
+            variants={stagger}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+          >
+            {/* Tile 1: Spend Tracker (spans 2 cols) */}
+            <BentoCard span="lg:col-span-2">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-3">
+                    <LineChart className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <h3 className="font-semibold text-zinc-900 tracking-tight">Spending Analytics</h3>
+                  <p className="text-sm text-zinc-500 mt-1">Real-time tracking with trend analysis and category breakdowns.</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-zinc-900">$116.97</p>
+                  <p className="text-xs text-emerald-600 font-medium">-3.2% vs last month</p>
+                </div>
+              </div>
+              <MiniChart />
+            </BentoCard>
+
+            {/* Tile 2: Zombie Detection */}
+            <BentoCard>
+              <div className="w-9 h-9 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center mb-3">
+                <Eye className="w-4 h-4 text-red-600" />
+              </div>
+              <h3 className="font-semibold text-zinc-900 tracking-tight">Zombie Detection</h3>
+              <p className="text-sm text-zinc-500 mt-1">AI identifies services you&apos;ve stopped using but keep paying for.</p>
+              <div className="mt-4 space-y-2">
+                {['Adobe CC — 4mo unused', 'Headspace — 5mo unused'].map(z => (
+                  <div key={z} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                    <span className="text-xs text-red-700 font-medium">{z}</span>
+                  </div>
+                ))}
+              </div>
+            </BentoCard>
+
+            {/* Tile 3: Subscription Stack */}
+            <BentoCard>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-3">
+                <CreditCard className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h3 className="font-semibold text-zinc-900 tracking-tight">All Subscriptions</h3>
+              <p className="text-sm text-zinc-500 mt-1">Every recurring charge, auto-detected and categorized.</p>
+              <SubscriptionStack />
+            </BentoCard>
+
+            {/* Tile 4: AI Chat Agent */}
+            <BentoCard>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-3">
+                <Bot className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h3 className="font-semibold text-zinc-900 tracking-tight">AI Agent</h3>
+              <p className="text-sm text-zinc-500 mt-1">Conversational AI that takes action — cancels, negotiates, and alerts.</p>
+              <div className="mt-4 space-y-2">
+                <div className="bg-zinc-50 rounded-lg px-3 py-2 border border-zinc-100">
+                  <p className="text-xs text-zinc-600"><span className="text-emerald-600 font-mono">{'>'}</span> Cancel my Adobe subscription</p>
+                </div>
+                <div className="bg-zinc-50 rounded-lg px-3 py-2 border border-zinc-100">
+                  <p className="text-xs text-zinc-500">Cancellation staged for <span className="text-zinc-900 font-medium">Adobe CC</span>. You&apos;ll save <span className="text-emerald-600 font-bold">$59.99/mo</span>.</p>
+                </div>
+              </div>
+            </BentoCard>
+
+            {/* Tile 5: Health Score */}
+            <BentoCard>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center mb-3">
+                <Shield className="w-4 h-4 text-amber-600" />
+              </div>
+              <h3 className="font-semibold text-zinc-900 tracking-tight">Health Score</h3>
+              <p className="text-sm text-zinc-500 mt-1">Get an A-F grade for your subscription portfolio with actionable recommendations.</p>
+              <div className="mt-4 flex items-center gap-4">
+                <div className="relative w-16 h-16 flex-shrink-0">
+                  <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                    <circle cx="18" cy="18" r="15.5" fill="none" stroke="#e4e4e7" strokeWidth="2.5" />
+                    <circle cx="18" cy="18" r="15.5" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeDasharray="75 100" strokeLinecap="round" />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-zinc-900">B+</span>
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-zinc-500">Zombie Ratio</span>
+                    <span className="font-bold text-zinc-700">12%</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-zinc-500">Efficiency</span>
+                    <span className="font-bold text-zinc-700">84/100</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-zinc-500">Trial Risk</span>
+                    <span className="font-bold text-amber-600">2 active</span>
+                  </div>
+                </div>
+              </div>
+            </BentoCard>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ─── How It Works ──────────────────────────────────────── */}
+      <section id="how-it-works" className="py-24 bg-zinc-50/50 border-t border-zinc-100">
+        <div className="max-w-6xl mx-auto px-6">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={stagger}
+            className="text-center mb-16"
+          >
+            <motion.p variants={fadeInUp} className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-3">How it Works</motion.p>
+            <motion.h2 variants={fadeInUp} className="text-3xl sm:text-4xl font-bold text-zinc-900 tracking-[-0.02em]">
+              Three steps to financial clarity
+            </motion.h2>
+          </motion.div>
+
+          <div className="max-w-xl mx-auto">
+            <TimelineStep
+              step={1}
+              title="Tell the AI about your subscriptions"
+              description='Simply type "I have Netflix, Spotify, and Adobe" or paste a billing email. The AI instantly detects every service, cost, and renewal date.'
+              icon={Zap}
+            />
+            <TimelineStep
+              step={2}
+              title="Get a full financial health scan"
+              description="The agent analyzes usage patterns, identifies zombie subscriptions, flags upcoming price hikes, and calculates your total potential savings."
+              icon={TrendingDown}
+            />
+            <TimelineStep
+              step={3}
+              title="Take action with one click"
+              description="Cancel services through guided flows, split costs with friends, or set up trial shields — all from the AI chat interface."
+              icon={CheckCircle2}
+              isLast
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Final CTA ─────────────────────────────────────────── */}
+      <section className="py-24 bg-white">
+        <div className="max-w-6xl mx-auto px-6">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: '-100px' }}
+            variants={stagger}
+            className="relative rounded-3xl bg-zinc-900 overflow-hidden px-8 py-16 sm:px-16 sm:py-20 text-center"
+          >
+            {/* Subtle gradient overlay */}
+            <div className="absolute inset-0 pointer-events-none" aria-hidden>
+              <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
+              <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-600/10 rounded-full blur-3xl" />
+            </div>
+
+            <div className="relative z-10">
+              <motion.h2
+                variants={fadeInUp}
+                className="text-3xl sm:text-4xl font-bold text-white tracking-[-0.02em]"
+              >
+                Stop paying for things you don&apos;t use.
+              </motion.h2>
+              <motion.p variants={fadeInUp} className="mt-4 text-zinc-400 max-w-md mx-auto">
+                The average person wastes $133/month on forgotten subscriptions. Let AI find yours.
+              </motion.p>
+              <motion.div variants={fadeInUp} className="mt-8">
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-2 px-8 py-3.5 bg-white text-zinc-900 text-sm font-semibold rounded-xl hover:bg-zinc-100 transition-colors shadow-lg"
+                >
+                  Launch SubTrack
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </motion.div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ─── Footer ────────────────────────────────────────────── */}
+      <footer className="py-8 border-t border-zinc-100">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-zinc-900 rounded-md flex items-center justify-center text-white text-[9px] font-bold">S</div>
+            <span className="text-sm text-zinc-500">SubTrack AI</span>
+          </div>
+          <p className="text-xs text-zinc-400">
+            Built with <span className="font-medium text-zinc-500">Tambo AI</span>
+          </p>
+        </div>
+      </footer>
+    </div>
   );
-}
-
-/* ─── Renewal Badge ────────────────────────────────────────────── */
-
-function RenewalBadge({ subscription }: { subscription: Subscription }) {
-  if (subscription.status === 'zombie') {
-    return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Zombie</span>;
-  }
-  if (subscription.status === 'price_hike' && subscription.priceChange) {
-    const increase = subscription.priceChange.to - subscription.priceChange.from;
-    return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">↑ ${increase.toFixed(0)}</span>;
-  }
-  if (subscription.status === 'trial_ending' && subscription.trialEndsIn !== undefined) {
-    return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Trial {subscription.trialEndsIn}d</span>;
-  }
-  if (subscription.renewalDate) {
-    const daysUntil = differenceInDays(new Date(subscription.renewalDate), new Date());
-    if (daysUntil >= 0 && daysUntil <= 7) {
-      return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{daysUntil}d</span>;
-    }
-  }
-  return null;
-}
-
-/* ─── Helpers ───────────────────────────────────────────────────── */
-
-const ICON_COLORS: Record<string, string> = {
-  netflix: 'bg-slate-900',
-  chatgpt: 'bg-emerald-500',
-  openai: 'bg-emerald-500',
-  claude: 'bg-amber-600',
-  spotify: 'bg-green-500',
-  adobe: 'bg-red-500',
-  disney: 'bg-blue-600',
-  youtube: 'bg-red-600',
-  notion: 'bg-slate-800',
-  figma: 'bg-purple-500',
-  github: 'bg-slate-900',
-  aws: 'bg-orange-500',
-  linkedin: 'bg-blue-700',
-  grammarly: 'bg-green-600',
-  headspace: 'bg-orange-400',
-  canva: 'bg-blue-500',
-  cursor: 'bg-slate-800',
-  perplexity: 'bg-teal-600',
-};
-
-function getSubscriptionIcon(name: string) {
-  const lower = name.toLowerCase();
-
-  if (lower.includes('netflix')) {
-    return { icon: <MonitorPlay className="w-4 h-4" />, bg: 'bg-slate-900' };
-  }
-  if (lower.includes('chatgpt') || lower.includes('openai')) {
-    return { icon: <Sparkles className="w-4 h-4" />, bg: 'bg-emerald-500' };
-  }
-  if (lower.includes('spotify')) {
-    return { icon: <Music className="w-4 h-4" />, bg: 'bg-green-500' };
-  }
-
-  // Check known icon colors for the background
-  for (const [key, color] of Object.entries(ICON_COLORS)) {
-    if (lower.includes(key)) {
-      return { icon: <span className="text-sm font-bold">{name.charAt(0)}</span>, bg: color };
-    }
-  }
-
-  // Default: first letter with a neutral background
-  return { icon: <span className="text-sm font-bold">{name.charAt(0)}</span>, bg: 'bg-slate-400' };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, AlertCircle, Info } from 'lucide-react';
 import { useTamboStreamStatus, useTamboThreadInput } from '@tambo-ai/react';
@@ -85,6 +85,11 @@ function AlertSkeleton() {
 export function AlertCard({ alerts, title, onAction }: AlertCardProps) {
   const { streamStatus } = useTamboStreamStatus<AlertCardProps>();
   const threadInput = useSafeThreadInput();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   const handleAction = (alert: Alert) => {
     if (onAction) {
@@ -99,7 +104,7 @@ export function AlertCard({ alerts, title, onAction }: AlertCardProps) {
           : `Review ${alert.subscriptionName}`;
       threadInput.setValue(actionMessage);
       // Submit after a tick so setValue propagates
-      setTimeout(() => threadInput.submit(), 50);
+      timerRef.current = setTimeout(() => threadInput.submit(), 50);
     }
   };
 
